@@ -1,0 +1,70 @@
+version: "3.8"
+
+services:
+  # Base de Datos PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: zelo_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zelo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zelo_secure_pass_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-zelo_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - zelo_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zelo} -d ${POSTGRES_DB:-zelo_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Aplicación Next.js Full-Stack
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zelo_app
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-zelo}:${POSTGRES_PASSWORD:-zelo_secure_pass_2026}@postgres:5432/${POSTGRES_DB:-zelo_db}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-zelo_super_secret_jwt_key_928374829374829374928374982374}
+      ADMIN_REGISTRATION_KEY: ${ADMIN_REGISTRATION_KEY:-zelo-admin-master-2026}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://2.25.102.198}
+    ports:
+      - "3000:3000"
+    networks:
+      - zelo_network
+
+  # Caddy Reverse Proxy con SSL Automático
+  caddy:
+    image: caddy:2-alpine
+    container_name: zelo_caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - zelo_network
+
+networks:
+  zelo_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

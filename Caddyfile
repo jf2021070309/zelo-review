@@ -1,0 +1,12 @@
+# Configuración Caddy para VPS ZELO Review
+# Reemplaza zelo.pe con tu dominio si ya tienes DNS apuntando a 2.25.102.198
+
+:80 {
+    reverse_proxy app:3000
+}
+
+# Si configuras un dominio con SSL automático:
+# zelo.pe, www.zelo.pe {
+#     reverse_proxy app:3000
+#     encode gzip zstd
+# }
