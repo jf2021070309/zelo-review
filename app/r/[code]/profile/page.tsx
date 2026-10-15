@@ -64,6 +64,8 @@ export default async function SmartProfilePage({
           business.googleReviewUrl ||
           "https://search.google.com/local/writereview",
         googleReviewEnabled: profile?.googleReviewEnabled ?? true,
+        facebookUrl: profile?.facebookUrl || business.facebook,
+        facebookEnabled: profile?.facebookEnabled ?? !!business.facebook,
         whatsappNumber: profile?.whatsappNumber || business.whatsapp,
         whatsappMessage: profile?.whatsappMessage || "¡Hola! Vengo desde su placa Zelo.",
         whatsappEnabled: profile?.whatsappEnabled ?? !!business.whatsapp,

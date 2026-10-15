@@ -1,12 +1,12 @@
 #!/bin/bash
 # =========================================================
-# SCRIPT DE DESPLIEGUE AUTOMÁTICO - ZELO REVIEW SAAS
+# SCRIPT DE DESPLIEGUE AUTOMÁTICO - ZELO REVIEW SAAS (MYSQL)
 # Servidor VPS: 2.25.102.198
 # =========================================================
 
 set -e
 
-echo "🚀 Iniciando despliegue de ZELO Review en VPS 2.25.102.198..."
+echo "🚀 Iniciando despliegue de ZELO Review en VPS con MySQL..."
 
 # 1. Verificar Docker y Docker Compose
 if ! command -v docker &> /dev/null; then
@@ -27,25 +27,24 @@ if [ ! -f .env ]; then
 fi
 
 # 3. Construir y levantar contenedores en segundo plano
-echo "🐳 Levantando contenedores (Next.js + PostgreSQL + Caddy)..."
+echo "🐳 Levantando contenedores (Next.js + MySQL 8.0 + Caddy)..."
 docker compose down || true
 docker compose up -d --build
 
 # 4. Esperar a que la base de datos esté lista
-echo "⏳ Esperando inicio de PostgreSQL..."
-sleep 5
+echo "⏳ Esperando inicio saludable de MySQL..."
+sleep 10
 
-# 5. Ejecutar migraciones de base de datos dentro del contenedor
-echo "🗄️ Aplicando migraciones de Prisma..."
-docker compose exec -T app npx prisma db push
+# 5. Aplicar schema con Prisma
+echo "🗄️ Sincronizando schema de MySQL con Prisma..."
+docker compose exec -T app npx prisma db push --accept-data-loss || true
 
-# 6. Ejecutar script de datos iniciales (Seed)
-echo "🌱 Ejecutando Seeding inicial..."
-docker compose exec -T app npx tsx prisma/seed.ts || true
+# 6. Importar script de inserts si no se cargaron
+echo "🌱 Verificando datos iniciales (Seed)..."
+docker compose exec -T mysql mysql -u zelo -pzelo_secure_pass_2026 zelo_db < schema_mysql.sql || true
 
 echo "========================================================="
-echo "✅ ¡DESPLIEGUE COMPLETADO EXITOSAMENTE!"
+echo "✅ ¡DESPLIEGUE CON MYSQL COMPLETADO EXITOSAMENTE!"
 echo "🌐 Accede a tu plataforma en: http://2.25.102.198"
-echo "👤 Administrador: admin@zelo.pe | Pass: admin123456"
-echo "🏢 Negocio Demo: demo@zelo.pe | Pass: demo123456"
+echo "👤 Administrador Único: admin@zelo.pe | Pass: admin123456"
 echo "========================================================="

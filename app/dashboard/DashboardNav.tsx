@@ -4,15 +4,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
-  Smartphone,
   QrCode,
   Settings,
   LogOut,
-  Building2,
-  ExternalLink,
   Sparkles,
   ShieldCheck,
-  ShieldAlert,
+  Printer,
 } from "lucide-react";
 
 interface Props {
@@ -30,7 +27,7 @@ interface Props {
   } | null;
 }
 
-export default function DashboardNav({ user, business }: Props) {
+export default function DashboardNav({ user }: Props) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -46,14 +43,9 @@ export default function DashboardNav({ user, business }: Props) {
 
   const navItems = [
     {
-      label: "Métricas & Resumen",
+      label: "Gestor de Placas (CRUD)",
       href: "/dashboard",
       icon: LayoutDashboard,
-    },
-    {
-      label: "Mis Placas Zelo",
-      href: "/dashboard/devices",
-      icon: Smartphone,
     },
     {
       label: "Estudio & Descarga QR",
@@ -61,7 +53,12 @@ export default function DashboardNav({ user, business }: Props) {
       icon: QrCode,
     },
     {
-      label: "Ajustes de Negocio",
+      label: "Lotes de Fabricación UV",
+      href: "/admin/batches",
+      icon: Printer,
+    },
+    {
+      label: "Ajustes de Perfil",
       href: "/dashboard/settings",
       icon: Settings,
     },
@@ -80,28 +77,26 @@ export default function DashboardNav({ user, business }: Props) {
               <span className="text-xl font-black tracking-tight text-white block leading-tight">
                 ZELO<span className="text-amber-400">.</span>
               </span>
-              <span className="text-[10px] text-slate-400 font-medium tracking-wider uppercase">
-                Panel Negocio
+              <span className="text-[10px] text-indigo-400 font-bold tracking-wider uppercase">
+                Administración
               </span>
             </div>
           </Link>
         </div>
 
-        {/* Business Selector / Current Business Card */}
-        {business && (
-          <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold text-sm flex-shrink-0">
-              {business.name.slice(0, 2).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold text-white truncate">{business.name}</div>
-              <div className="text-xs text-slate-400 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                <span>En Línea</span>
-              </div>
+        {/* Admin Badge */}
+        <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold text-sm flex-shrink-0">
+            <ShieldCheck className="w-5 h-5 text-indigo-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-white truncate">Administrador Único</div>
+            <div className="text-xs text-slate-400 flex items-center gap-1 font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span>{user.email}</span>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Navigation Items */}
         <nav className="space-y-1">
@@ -124,17 +119,6 @@ export default function DashboardNav({ user, business }: Props) {
               </Link>
             );
           })}
-
-          {/* SuperAdmin Link if applicable */}
-          {user.role === "ADMIN" && (
-            <Link
-              href="/admin"
-              className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 transition-all mt-4"
-            >
-              <ShieldAlert className="w-4 h-4 text-amber-400" />
-              <span>Panel SuperAdmin</span>
-            </Link>
-          )}
         </nav>
       </div>
 
@@ -143,12 +127,12 @@ export default function DashboardNav({ user, business }: Props) {
         <div className="flex items-center justify-between px-2">
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold text-white truncate">{user.name}</p>
-            <p className="text-[11px] text-slate-400 truncate">{user.email}</p>
+            <p className="text-[11px] text-slate-500 truncate font-mono">{user.email}</p>
           </div>
           <button
             onClick={handleLogout}
             title="Cerrar Sesión"
-            className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+            className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
           >
             <LogOut className="w-4 h-4" />
           </button>

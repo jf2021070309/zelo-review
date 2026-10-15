@@ -1,23 +1,26 @@
 version: "3.8"
 
 services:
-  # Base de Datos PostgreSQL
-  postgres:
-    image: postgres:16-alpine
-    container_name: zelo_postgres
+  # Base de Datos MySQL 8.0
+  mysql:
+    image: mysql:8.0
+    container_name: zelo_mysql
     restart: always
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-zelo}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zelo_secure_pass_2026}
-      POSTGRES_DB: ${POSTGRES_DB:-zelo_db}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-zelo_root_pass_2026}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-zelo_db}
+      MYSQL_USER: ${MYSQL_USER:-zelo}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-zelo_secure_pass_2026}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
+      - ./schema_mysql.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:3306:3306"
     networks:
       - zelo_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zelo} -d ${POSTGRES_DB:-zelo_db}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pzelo_root_pass_2026"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -30,11 +33,11 @@ services:
     container_name: zelo_app
     restart: always
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-zelo}:${POSTGRES_PASSWORD:-zelo_secure_pass_2026}@postgres:5432/${POSTGRES_DB:-zelo_db}?schema=public
+      DATABASE_URL: mysql://${MYSQL_USER:-zelo}:${MYSQL_PASSWORD:-zelo_secure_pass_2026}@mysql:3306/${MYSQL_DATABASE:-zelo_db}
       JWT_SECRET: ${JWT_SECRET:-zelo_super_secret_jwt_key_928374829374829374928374982374}
       ADMIN_REGISTRATION_KEY: ${ADMIN_REGISTRATION_KEY:-zelo-admin-master-2026}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://2.25.102.198}
@@ -65,6 +68,6 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
+  mysql_data:
   caddy_data:
   caddy_config:

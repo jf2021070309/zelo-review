@@ -1,8 +1,12 @@
-import LandingClient from "./LandingClient";
+import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 
 export default async function HomePage() {
   const session = await getSession();
 
-  return <LandingClient isLoggedIn={!!session} userRole={session?.role} />;
+  if (session) {
+    redirect("/dashboard");
+  }
+
+  redirect("/login");
 }

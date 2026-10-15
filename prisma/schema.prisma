@@ -1,5 +1,5 @@
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -50,13 +50,14 @@ model Business {
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   name            String
   slug            String    @unique
-  logoUrl         String?
-  coverUrl        String?
-  googleReviewUrl String?
+  logoUrl         String?   @db.Text
+  coverUrl        String?   @db.Text
+  googleReviewUrl String?   @db.Text
   phone           String?
   whatsapp        String?
   instagram       String?
-  website         String?
+  facebook        String?   @db.Text
+  website         String?   @db.Text
   address         String?
   category        String?
   devices         Device[]
@@ -71,7 +72,7 @@ model Batch {
   name      String
   quantity  Int
   prefix    String   @default("ZL")
-  notes     String?
+  notes     String?  @db.Text
   devices   Device[]
   createdAt DateTime @default(now())
 
@@ -84,7 +85,7 @@ model Device {
   activationPin       String        // Código de 4 a 6 dígitos para registrar la placa
   status              DeviceStatus  @default(READY_TO_ASSIGN)
   mode                DeviceMode    @default(DIRECT_REDIRECT)
-  customDestinationUrl String?
+  customDestinationUrl String?      @db.Text
   
   businessId          String?
   business            Business?     @relation(fields: [businessId], references: [id], onDelete: SetNull)
@@ -107,12 +108,15 @@ model SmartProfile {
   device              Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   
   title               String?
-  description         String?
+  description         String?      @db.Text
   theme               String       @default("dark_gold") // dark_gold, neon_indigo, emerald_luxury, clean_white, ruby_elegance
   
-  googleReviewUrl     String?
+  googleReviewUrl     String?      @db.Text
   googleReviewEnabled Boolean      @default(true)
   
+  facebookUrl         String?      @db.Text
+  facebookEnabled     Boolean      @default(false)
+
   whatsappNumber      String?
   whatsappMessage     String?      @default("Hola! Vengo desde la placa Zelo.")
   whatsappEnabled     Boolean      @default(false)
@@ -120,17 +124,17 @@ model SmartProfile {
   instagramHandle     String?
   instagramEnabled    Boolean      @default(false)
   
-  websiteUrl          String?
+  websiteUrl          String?      @db.Text
   websiteEnabled      Boolean      @default(false)
   
-  menuUrl             String?
+  menuUrl             String?      @db.Text
   menuEnabled         Boolean      @default(false)
   
   wifiSsid            String?
   wifiPassword        String?
   wifiEnabled         Boolean      @default(false)
   
-  googleMapsUrl       String?
+  googleMapsUrl       String?      @db.Text
   googleMapsEnabled   Boolean      @default(false)
   
   customLinks         SmartLink[]
@@ -145,7 +149,7 @@ model SmartLink {
   profileId      String
   profile        SmartProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   title          String
-  url            String
+  url            String       @db.Text
   icon           String       @default("globe") // star, globe, gift, shopping-bag, facebook, tiktok, tripadvisor, mail, phone
   order          Int          @default(0)
   isActive       Boolean      @default(true)
@@ -161,7 +165,7 @@ model ScanEvent {
   device     Device     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   source     ScanSource @default(UNKNOWN) // QR, NFC, DIRECT
   ipHash     String?
-  userAgent  String?
+  userAgent  String?    @db.Text
   deviceType String?    // mobile, tablet, desktop
   os         String?    // iOS, Android, Windows, macOS, Linux
   browser    String?    // Safari, Chrome, Firefox, Edge
