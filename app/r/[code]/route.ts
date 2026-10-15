@@ -4,6 +4,22 @@ import { recordScanEvent } from "@/lib/analytics";
 
 export const dynamic = "force-dynamic";
 
+function getPublicDomain(request: NextRequest): string {
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL;
+  if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
+    return envUrl.replace(/\/+$/, "");
+  }
+
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+  const proto = request.headers.get("x-forwarded-proto") || "https";
+
+  if (host && !host.includes("localhost") && !host.includes("127.0.0.1") && !host.includes("3000")) {
+    return `${proto}://${host}`;
+  }
+
+  return "https://review.zelo.com.mx";
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { code: string } }
@@ -11,6 +27,7 @@ export async function GET(
   const code = params.code?.toUpperCase().trim();
   const searchParams = request.nextUrl.searchParams;
   const rawSource = searchParams.get("src")?.toUpperCase();
+  const domain = getPublicDomain(request);
 
   let source: "QR" | "NFC" | "DIRECT" | "UNKNOWN" = "DIRECT";
   if (rawSource === "QR") source = "QR";
@@ -31,7 +48,7 @@ export async function GET(
     );
 
     if (!device) {
-      return NextResponse.redirect(new URL(`/login`, request.url));
+      return NextResponse.redirect(`${domain}/login`, { status: 302 });
     }
 
     // Record scan asynchronously (non-blocking)
@@ -50,12 +67,12 @@ export async function GET(
       );
     }
 
-    // Case 2: Smart Bio-Link Hub Mode
+    // Case 2: Smart Bio-Link Hub Mode (Perfil dinámico)
     if (device.mode === "SMART_PROFILE") {
-      return NextResponse.redirect(new URL(`/r/${device.code}/profile`, request.url));
+      return NextResponse.redirect(`${domain}/r/${device.code}/profile`, { status: 302 });
     }
 
-    // Case 3: Direct Redirect Mode (Google Reviews or Custom URL)
+    // Case 3: Direct Redirect Mode (Google Reviews o URL personalizada)
     const destination =
       device.customDestinationUrl ||
       device.businessGoogleReviewUrl ||
@@ -64,6 +81,6 @@ export async function GET(
     return NextResponse.redirect(destination, { status: 302 });
   } catch (error) {
     console.error("Error in redirection route:", error);
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(`${domain}/`, { status: 302 });
   }
 }

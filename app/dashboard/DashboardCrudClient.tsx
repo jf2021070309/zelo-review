@@ -203,9 +203,12 @@ export default function DashboardCrudClient({
 
   const getFullUrl = (code: string, src: "qr" | "nfc") => {
     if (typeof window !== "undefined") {
-      return `${window.location.origin}/r/${code}?src=${src}`;
+      const origin = window.location.origin;
+      if (!origin.includes("localhost") && !origin.includes("127.0.0.1") && !origin.includes(":3000")) {
+        return `${origin}/r/${code}?src=${src}`;
+      }
     }
-    return `https://zelo.pe/r/${code}?src=${src}`;
+    return `https://review.zelo.com.mx/r/${code}?src=${src}`;
   };
 
   // Manejar cambio en Combobox de negocio en modal de creación
@@ -1173,11 +1176,11 @@ export default function DashboardCrudClient({
             </div>
 
             {/* QR Image Preview */}
-            <div className="p-4 bg-white rounded-2xl max-w-[220px] mx-auto shadow-inner">
+            <div className="p-4 bg-white rounded-2xl max-w-[220px] mx-auto shadow-inner flex items-center justify-center">
               <img
-                src={`/api/qr?text=${encodeURIComponent(createdDeviceResult.qrUrl)}&format=dataurl`}
-                alt="QR Code"
-                className="w-full h-auto"
+                src={`/api/qr?text=${encodeURIComponent(createdDeviceResult.qrUrl)}&format=png`}
+                alt="Código QR"
+                className="w-full h-auto object-contain"
               />
             </div>
 
@@ -1234,7 +1237,7 @@ export default function DashboardCrudClient({
             {/* Botones de descarga */}
             <div className="grid grid-cols-2 gap-2 pt-2">
               <a
-                href={`/api/qr?text=${encodeURIComponent(createdDeviceResult.qrUrl)}&format=png&code=${createdDeviceResult.code}`}
+                href={`/api/qr?text=${encodeURIComponent(createdDeviceResult.qrUrl)}&format=png&code=${createdDeviceResult.code}&download=1`}
                 download
                 className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
               >
@@ -1242,7 +1245,7 @@ export default function DashboardCrudClient({
                 <span>Descargar PNG</span>
               </a>
               <a
-                href={`/api/qr?text=${encodeURIComponent(createdDeviceResult.qrUrl)}&format=svg&code=${createdDeviceResult.code}`}
+                href={`/api/qr?text=${encodeURIComponent(createdDeviceResult.qrUrl)}&format=svg&code=${createdDeviceResult.code}&download=1`}
                 download
                 className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
               >
@@ -1498,17 +1501,17 @@ export default function DashboardCrudClient({
               </p>
             </div>
 
-            <div className="p-4 bg-white rounded-2xl max-w-[200px] mx-auto shadow-inner">
+            <div className="p-4 bg-white rounded-2xl max-w-[200px] mx-auto shadow-inner flex items-center justify-center">
               <img
-                src={`/api/qr?text=${encodeURIComponent(getFullUrl(qrModalDevice.code, "qr"))}&format=dataurl`}
-                alt="QR Code"
-                className="w-full h-auto"
+                src={`/api/qr?text=${encodeURIComponent(getFullUrl(qrModalDevice.code, "qr"))}&format=png`}
+                alt="Código QR"
+                className="w-full h-auto object-contain"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-2">
               <a
-                href={`/api/qr?text=${encodeURIComponent(getFullUrl(qrModalDevice.code, "qr"))}&format=png&code=${qrModalDevice.code}`}
+                href={`/api/qr?text=${encodeURIComponent(getFullUrl(qrModalDevice.code, "qr"))}&format=png&code=${qrModalDevice.code}&download=1`}
                 download
                 className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
               >
@@ -1516,7 +1519,7 @@ export default function DashboardCrudClient({
                 <span>PNG 1000px</span>
               </a>
               <a
-                href={`/api/qr?text=${encodeURIComponent(getFullUrl(qrModalDevice.code, "qr"))}&format=svg&code=${qrModalDevice.code}`}
+                href={`/api/qr?text=${encodeURIComponent(getFullUrl(qrModalDevice.code, "qr"))}&format=svg&code=${qrModalDevice.code}&download=1`}
                 download
                 className="py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
               >
