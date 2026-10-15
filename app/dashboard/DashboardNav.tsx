@@ -10,6 +10,7 @@ import {
   Sparkles,
   ShieldCheck,
   Printer,
+  MapPin,
 } from "lucide-react";
 
 interface Props {
@@ -46,6 +47,11 @@ export default function DashboardNav({ user }: Props) {
       label: "Gestor de Placas (CRUD)",
       href: "/dashboard",
       icon: LayoutDashboard,
+    },
+    {
+      label: "Generador Google Reviews",
+      href: "/dashboard/google-reviews",
+      icon: MapPin,
     },
     {
       label: "Estudio & Descarga QR",

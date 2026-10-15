@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Smartphone,
   QrCode,
@@ -27,6 +27,7 @@ import {
   BarChart3,
   Building2,
   Lock,
+  MapPin,
 } from "lucide-react";
 
 interface SmartProfile {
@@ -143,6 +144,53 @@ export default function DashboardCrudClient({
   // Estado Modal Eliminar (Delete)
   const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Helper Place ID en Modal Crear
+  const [showPlaceIdHelper, setShowPlaceIdHelper] = useState(false);
+  const [inlinePlaceId, setInlinePlaceId] = useState("");
+
+  // Helper Place ID en Modal Editar
+  const [showEditPlaceIdHelper, setShowEditPlaceIdHelper] = useState(false);
+  const [inlineEditPlaceId, setInlineEditPlaceId] = useState("");
+
+  // Abrir modal de creación automáticamente si viene de la herramienta Google Reviews
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("newPlate") === "1") {
+        setShowCreateModal(true);
+        const gUrl = params.get("googleUrl");
+        if (gUrl) {
+          setFormGoogleReviews(decodeURIComponent(gUrl));
+        }
+        const bName = params.get("businessName");
+        if (bName) {
+          setFormBusinessName(decodeURIComponent(bName));
+          setBusinessSelection("new");
+        }
+      }
+    }
+  }, []);
+
+  const applyInlinePlaceId = () => {
+    const raw = inlinePlaceId.trim();
+    if (!raw) return;
+    const match = raw.match(/[?&]place(?:_)?id=([A-Za-z0-9_-]+)/i);
+    const id = match && match[1] ? match[1] : raw;
+    setFormGoogleReviews(`https://search.google.com/local/writereview?placeid=${id}`);
+    setShowPlaceIdHelper(false);
+    setInlinePlaceId("");
+  };
+
+  const applyInlineEditPlaceId = () => {
+    const raw = inlineEditPlaceId.trim();
+    if (!raw) return;
+    const match = raw.match(/[?&]place(?:_)?id=([A-Za-z0-9_-]+)/i);
+    const id = match && match[1] ? match[1] : raw;
+    setEditGoogleReviews(`https://search.google.com/local/writereview?placeid=${id}`);
+    setShowEditPlaceIdHelper(false);
+    setInlineEditPlaceId("");
+  };
 
   // Copiado temporal
   const [copiedText, setCopiedText] = useState<string | null>(null);
@@ -873,10 +921,54 @@ export default function DashboardCrudClient({
 
                 {/* Google Reviews */}
                 <div>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-300 mb-1">
-                    <Star className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Enlace Google Reviews</span>
+                  <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <Star className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Enlace Google Reviews</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowPlaceIdHelper(!showPlaceIdHelper)}
+                      className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 transition"
+                    >
+                      <MapPin className="w-3 h-3" />
+                      <span>{showPlaceIdHelper ? "Cerrar Place ID" : "⚡ Usar Place ID Finder"}</span>
+                    </button>
                   </div>
+
+                  {showPlaceIdHelper && (
+                    <div className="mb-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 space-y-2">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-amber-300">Convertir Google Place ID en enlace 5 estrellas:</span>
+                        <a
+                          href="/dashboard/google-reviews"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-amber-400 hover:underline flex items-center gap-0.5"
+                        >
+                          <span>Herramienta completa</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={inlinePlaceId}
+                          onChange={(e) => setInlinePlaceId(e.target.value)}
+                          placeholder="Pega Place ID (ej. ChIJ...) o link de Maps"
+                          className="flex-1 px-2.5 py-1.5 bg-slate-950 border border-amber-500/30 rounded text-white text-xs font-mono focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={applyInlinePlaceId}
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded transition"
+                        >
+                          Aplicar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <input
                     type="url"
                     value={formGoogleReviews}
@@ -1269,7 +1361,39 @@ export default function DashboardCrudClient({
                 </label>
 
                 <div>
-                  <span className="text-[11px] text-slate-400 block mb-1">Google Reviews:</span>
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                    <span>Google Reviews:</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowEditPlaceIdHelper(!showEditPlaceIdHelper)}
+                      className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1"
+                    >
+                      <MapPin className="w-3 h-3" />
+                      <span>{showEditPlaceIdHelper ? "Cerrar" : "⚡ Place ID"}</span>
+                    </button>
+                  </div>
+
+                  {showEditPlaceIdHelper && (
+                    <div className="mb-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 space-y-1.5">
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={inlineEditPlaceId}
+                          onChange={(e) => setInlineEditPlaceId(e.target.value)}
+                          placeholder="Pega Place ID (ChIJ...)"
+                          className="flex-1 px-2.5 py-1.5 bg-slate-950 border border-amber-500/30 rounded text-white text-xs font-mono focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={applyInlineEditPlaceId}
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded transition"
+                        >
+                          Aplicar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <input
                     type="url"
                     value={editGoogleReviews}
