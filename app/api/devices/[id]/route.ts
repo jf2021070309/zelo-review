@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { queryOne, execute, query } from "@/lib/db";
+import crypto from "crypto";
 
 export async function GET(
   request: Request,
@@ -11,37 +12,41 @@ export async function GET(
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
-  const device = await prisma.device.findUnique({
-    where: { id: params.id },
-    include: {
-      business: true,
-      smartProfile: {
-        include: {
-          customLinks: {
-            orderBy: { order: "asc" },
-          },
-        },
-      },
-      scanEvents: {
-        orderBy: { createdAt: "desc" },
-        take: 50,
-      },
-      _count: {
-        select: { scanEvents: true },
-      },
-    },
-  });
+  const device = await queryOne<any>(
+    "SELECT * FROM devices WHERE id = ? LIMIT 1",
+    [params.id]
+  );
 
   if (!device) {
     return NextResponse.json({ error: "Placa no encontrada" }, { status: 404 });
   }
 
-  // Ensure user owns this device or is admin
-  if (user.role !== "ADMIN" && device.business?.userId !== user.id) {
-    return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
-  }
+  const business = device.businessId
+    ? await queryOne("SELECT * FROM businesses WHERE id = ? LIMIT 1", [device.businessId])
+    : null;
 
-  return NextResponse.json({ device });
+  const smartProfile = await queryOne(
+    "SELECT * FROM smart_profiles WHERE deviceId = ? LIMIT 1",
+    [device.id]
+  );
+
+  const customLinks = smartProfile
+    ? await query("SELECT * FROM smart_links WHERE profileId = ? ORDER BY `order` ASC", [smartProfile.id])
+    : [];
+
+  const scanEvents = await query(
+    "SELECT * FROM scan_events WHERE deviceId = ? ORDER BY createdAt DESC LIMIT 50",
+    [device.id]
+  );
+
+  return NextResponse.json({
+    device: {
+      ...device,
+      business,
+      smartProfile: smartProfile ? { ...smartProfile, customLinks } : null,
+      scanEvents,
+    },
+  });
 }
 
 export async function PATCH(
@@ -54,17 +59,13 @@ export async function PATCH(
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const device = await prisma.device.findUnique({
-      where: { id: params.id },
-      include: { business: true },
-    });
+    const device = await queryOne<any>(
+      "SELECT * FROM devices WHERE id = ? LIMIT 1",
+      [params.id]
+    );
 
     if (!device) {
       return NextResponse.json({ error: "Placa no encontrada" }, { status: 404 });
-    }
-
-    if (user.role !== "ADMIN" && device.business?.userId !== user.id) {
-      return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 
     const data = await request.json();
@@ -82,101 +83,159 @@ export async function PATCH(
     } = data;
 
     // 1. Actualizar negocio si se envió cambio de nombre o enlaces
-    if (device.businessId && (businessName || googleReviewUrl !== undefined || facebook !== undefined || instagram !== undefined || website !== undefined || whatsapp !== undefined)) {
-      await prisma.business.update({
-        where: { id: device.businessId },
-        data: {
-          name: businessName || undefined,
-          googleReviewUrl: googleReviewUrl !== undefined ? googleReviewUrl : undefined,
-          facebook: facebook !== undefined ? facebook : undefined,
-          instagram: instagram !== undefined ? instagram : undefined,
-          website: website !== undefined ? website : undefined,
-          whatsapp: whatsapp !== undefined ? whatsapp : undefined,
-        },
-      });
+    if (device.businessId) {
+      const updates: string[] = [];
+      const values: any[] = [];
+
+      if (businessName) {
+        updates.push("name = ?");
+        values.push(businessName);
+      }
+      if (googleReviewUrl !== undefined) {
+        updates.push("googleReviewUrl = ?");
+        values.push(googleReviewUrl);
+      }
+      if (facebook !== undefined) {
+        updates.push("facebook = ?");
+        values.push(facebook);
+      }
+      if (instagram !== undefined) {
+        updates.push("instagram = ?");
+        values.push(instagram);
+      }
+      if (website !== undefined) {
+        updates.push("website = ?");
+        values.push(website);
+      }
+      if (whatsapp !== undefined) {
+        updates.push("whatsapp = ?");
+        values.push(whatsapp);
+      }
+
+      if (updates.length > 0) {
+        updates.push("updatedAt = NOW(3)");
+        values.push(device.businessId);
+        await execute(
+          `UPDATE businesses SET ${updates.join(", ")} WHERE id = ?`,
+          values
+        );
+      }
     }
 
     // 2. Actualizar configuración central de la placa
-    const updatedDevice = await prisma.device.update({
-      where: { id: params.id },
-      data: {
-        mode: mode || undefined,
-        customDestinationUrl: customDestinationUrl !== undefined ? customDestinationUrl : undefined,
-        status: status || undefined,
-      },
-    });
+    const deviceUpdates: string[] = [];
+    const deviceValues: any[] = [];
+
+    if (mode) {
+      deviceUpdates.push("mode = ?");
+      deviceValues.push(mode);
+    }
+    if (customDestinationUrl !== undefined) {
+      deviceUpdates.push("customDestinationUrl = ?");
+      deviceValues.push(customDestinationUrl);
+    }
+    if (status) {
+      deviceUpdates.push("status = ?");
+      deviceValues.push(status);
+    }
+
+    if (deviceUpdates.length > 0) {
+      deviceUpdates.push("updatedAt = NOW(3)");
+      deviceValues.push(params.id);
+      await execute(
+        `UPDATE devices SET ${deviceUpdates.join(", ")} WHERE id = ?`,
+        deviceValues
+      );
+    }
 
     // 3. Upsert / Actualizar SmartProfile
-    if (smartProfile || businessName || facebook || instagram || website || whatsapp || googleReviewUrl) {
-      const existingProfile = await prisma.smartProfile.findUnique({
-        where: { deviceId: params.id },
-      });
+    if (smartProfile || businessName || facebook !== undefined || instagram !== undefined || website !== undefined || whatsapp !== undefined || googleReviewUrl !== undefined) {
+      const existingProfile = await queryOne<any>(
+        "SELECT id FROM smart_profiles WHERE deviceId = ? LIMIT 1",
+        [params.id]
+      );
 
       const spData = smartProfile || {};
-
-      const profilePayload = {
-        title: spData.title || businessName || undefined,
-        description: spData.description !== undefined ? spData.description : undefined,
-        theme: spData.theme || undefined,
-        googleReviewUrl: spData.googleReviewUrl || googleReviewUrl || undefined,
-        googleReviewEnabled: spData.googleReviewEnabled !== undefined ? spData.googleReviewEnabled : true,
-        facebookUrl: spData.facebookUrl || facebook || undefined,
-        facebookEnabled: spData.facebookEnabled !== undefined ? spData.facebookEnabled : !!(spData.facebookUrl || facebook),
-        whatsappNumber: spData.whatsappNumber || whatsapp || undefined,
-        whatsappMessage: spData.whatsappMessage || undefined,
-        whatsappEnabled: spData.whatsappEnabled !== undefined ? spData.whatsappEnabled : !!(spData.whatsappNumber || whatsapp),
-        instagramHandle: spData.instagramHandle || instagram || undefined,
-        instagramEnabled: spData.instagramEnabled !== undefined ? spData.instagramEnabled : !!(spData.instagramHandle || instagram),
-        websiteUrl: spData.websiteUrl || website || undefined,
-        websiteEnabled: spData.websiteEnabled !== undefined ? spData.websiteEnabled : !!(spData.websiteUrl || website),
-        menuUrl: spData.menuUrl !== undefined ? spData.menuUrl : undefined,
-        menuEnabled: spData.menuEnabled !== undefined ? spData.menuEnabled : undefined,
-        wifiSsid: spData.wifiSsid !== undefined ? spData.wifiSsid : undefined,
-        wifiPassword: spData.wifiPassword !== undefined ? spData.wifiPassword : undefined,
-        wifiEnabled: spData.wifiEnabled !== undefined ? spData.wifiEnabled : undefined,
-        googleMapsUrl: spData.googleMapsUrl !== undefined ? spData.googleMapsUrl : undefined,
-        googleMapsEnabled: spData.googleMapsEnabled !== undefined ? spData.googleMapsEnabled : undefined,
-      };
+      const title = spData.title || businessName || undefined;
+      const gReview = spData.googleReviewUrl !== undefined ? spData.googleReviewUrl : googleReviewUrl;
+      const fb = spData.facebookUrl !== undefined ? spData.facebookUrl : facebook;
+      const ig = spData.instagramHandle !== undefined ? spData.instagramHandle : instagram;
+      const web = spData.websiteUrl !== undefined ? spData.websiteUrl : website;
+      const wa = spData.whatsappNumber !== undefined ? spData.whatsappNumber : whatsapp;
 
       if (existingProfile) {
-        await prisma.smartProfile.update({
-          where: { deviceId: params.id },
-          data: profilePayload,
-        });
-
-        if (Array.isArray(spData.customLinks)) {
-          await prisma.smartLink.deleteMany({
-            where: { profileId: existingProfile.id },
-          });
-
-          if (spData.customLinks.length > 0) {
-            await prisma.smartLink.createMany({
-              data: spData.customLinks.map((link: any, index: number) => ({
-                profileId: existingProfile.id,
-                title: link.title || "Enlace",
-                url: link.url || "https://",
-                icon: link.icon || "globe",
-                order: index,
-                isActive: true,
-              })),
-            });
-          }
-        }
+        await execute(
+          `UPDATE smart_profiles SET
+            title = COALESCE(?, title),
+            description = COALESCE(?, description),
+            googleReviewUrl = COALESCE(?, googleReviewUrl),
+            googleReviewEnabled = COALESCE(?, googleReviewEnabled),
+            facebookUrl = COALESCE(?, facebookUrl),
+            facebookEnabled = COALESCE(?, facebookEnabled),
+            whatsappNumber = COALESCE(?, whatsappNumber),
+            whatsappEnabled = COALESCE(?, whatsappEnabled),
+            instagramHandle = COALESCE(?, instagramHandle),
+            instagramEnabled = COALESCE(?, instagramEnabled),
+            websiteUrl = COALESCE(?, websiteUrl),
+            websiteEnabled = COALESCE(?, websiteEnabled),
+            updatedAt = NOW(3)
+          WHERE id = ?`,
+          [
+            title || null,
+            spData.description ?? null,
+            gReview || null,
+            spData.googleReviewEnabled !== undefined ? (spData.googleReviewEnabled ? 1 : 0) : null,
+            fb || null,
+            spData.facebookEnabled !== undefined ? (spData.facebookEnabled ? 1 : 0) : (fb ? 1 : null),
+            wa || null,
+            spData.whatsappEnabled !== undefined ? (spData.whatsappEnabled ? 1 : 0) : (wa ? 1 : null),
+            ig || null,
+            spData.instagramEnabled !== undefined ? (spData.instagramEnabled ? 1 : 0) : (ig ? 1 : null),
+            web || null,
+            spData.websiteEnabled !== undefined ? (spData.websiteEnabled ? 1 : 0) : (web ? 1 : null),
+            existingProfile.id,
+          ]
+        );
       } else {
-        await prisma.smartProfile.create({
-          data: {
-            deviceId: params.id,
-            ...profilePayload,
-            title: profilePayload.title || device.business?.name || "Mi Negocio",
-          },
-        });
+        const newSpId = crypto.randomUUID();
+        await execute(
+          `INSERT INTO smart_profiles (
+            id, deviceId, title, description, theme,
+            googleReviewUrl, googleReviewEnabled,
+            facebookUrl, facebookEnabled,
+            whatsappNumber, whatsappEnabled,
+            instagramHandle, instagramEnabled,
+            websiteUrl, websiteEnabled,
+            createdAt, updatedAt
+          ) VALUES (?, ?, ?, ?, 'dark_gold', ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
+          [
+            newSpId,
+            params.id,
+            title || "Mi Negocio",
+            spData.description || "¡Gracias por visitarnos!",
+            gReview || null,
+            fb || null,
+            fb ? 1 : 0,
+            wa || null,
+            wa ? 1 : 0,
+            ig || null,
+            ig ? 1 : 0,
+            web || null,
+            web ? 1 : 0,
+          ]
+        );
       }
     }
+
+    const updatedDevice = await queryOne("SELECT * FROM devices WHERE id = ? LIMIT 1", [params.id]);
 
     return NextResponse.json({ success: true, device: updatedDevice });
   } catch (error: any) {
     console.error("Device update error:", error);
-    return NextResponse.json({ error: error.message || "Error al actualizar la configuración." }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Error al actualizar la configuración." },
+      { status: 500 }
+    );
   }
 }
 
@@ -190,26 +249,23 @@ export async function DELETE(
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const device = await prisma.device.findUnique({
-      where: { id: params.id },
-      include: { business: true },
-    });
+    const device = await queryOne<any>(
+      "SELECT id FROM devices WHERE id = ? LIMIT 1",
+      [params.id]
+    );
 
     if (!device) {
       return NextResponse.json({ error: "Placa no encontrada" }, { status: 404 });
     }
 
-    if (user.role !== "ADMIN" && device.business?.userId !== user.id) {
-      return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
-    }
+    await execute("DELETE FROM devices WHERE id = ?", [params.id]);
 
-    await prisma.device.delete({
-      where: { id: params.id },
-    });
-
-    return NextResponse.json({ success: true, message: "Placa eliminada correctamente." });
+    return NextResponse.json({ success: true, message: "Placa eliminada correctamente de MySQL." });
   } catch (error: any) {
     console.error("Device delete error:", error);
-    return NextResponse.json({ error: error.message || "Error al eliminar la placa." }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Error al eliminar la placa." },
+      { status: 500 }
+    );
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { query, queryOne, execute } from "@/lib/db";
+import crypto from "crypto";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -8,47 +9,72 @@ export async function GET() {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
-  // Si es ADMIN, puede ver todas las placas o las de sus negocios
-  const businessIds = user.role === "ADMIN" 
-    ? undefined 
-    : user.businesses.map((b) => b.id);
+  const devicesRows = await query(`
+    SELECT 
+      d.id, d.code, d.activationPin, d.status, d.mode, d.customDestinationUrl, d.businessId, d.createdAt,
+      b.id AS b_id, b.name AS b_name, b.slug AS b_slug, b.googleReviewUrl AS b_googleReviewUrl,
+      b.facebook AS b_facebook, b.instagram AS b_instagram, b.website AS b_website, b.whatsapp AS b_whatsapp,
+      sp.id AS sp_id, sp.title AS sp_title, sp.description AS sp_description,
+      sp.googleReviewUrl AS sp_googleReviewUrl, sp.googleReviewEnabled AS sp_googleReviewEnabled,
+      sp.facebookUrl AS sp_facebookUrl, sp.facebookEnabled AS sp_facebookEnabled,
+      sp.instagramHandle AS sp_instagramHandle, sp.instagramEnabled AS sp_instagramEnabled,
+      sp.websiteUrl AS sp_websiteUrl, sp.websiteEnabled AS sp_websiteEnabled,
+      sp.whatsappNumber AS sp_whatsappNumber, sp.whatsappEnabled AS sp_whatsappEnabled,
+      COUNT(se.id) AS totalScans,
+      SUM(CASE WHEN se.source = 'QR' THEN 1 ELSE 0 END) AS qrScans,
+      SUM(CASE WHEN se.source = 'NFC' THEN 1 ELSE 0 END) AS nfcScans
+    FROM devices d
+    LEFT JOIN businesses b ON d.businessId = b.id
+    LEFT JOIN smart_profiles sp ON sp.deviceId = d.id
+    LEFT JOIN scan_events se ON se.deviceId = d.id
+    GROUP BY d.id, b.id, sp.id
+    ORDER BY d.createdAt DESC
+  `);
 
-  const whereCondition = businessIds ? { businessId: { in: businessIds } } : {};
+  const devices = devicesRows.map((row: any) => ({
+    id: row.id,
+    code: row.code,
+    activationPin: row.activationPin,
+    status: row.status,
+    mode: row.mode,
+    customDestinationUrl: row.customDestinationUrl,
+    businessId: row.businessId,
+    business: row.b_id
+      ? {
+          id: row.b_id,
+          name: row.b_name,
+          slug: row.b_slug,
+          googleReviewUrl: row.b_googleReviewUrl,
+          facebook: row.b_facebook,
+          instagram: row.b_instagram,
+          website: row.b_website,
+          whatsapp: row.b_whatsapp,
+        }
+      : null,
+    smartProfile: row.sp_id
+      ? {
+          id: row.sp_id,
+          title: row.sp_title,
+          description: row.sp_description,
+          googleReviewUrl: row.sp_googleReviewUrl,
+          googleReviewEnabled: Boolean(row.sp_googleReviewEnabled),
+          facebookUrl: row.sp_facebookUrl,
+          facebookEnabled: Boolean(row.sp_facebookEnabled),
+          instagramHandle: row.sp_instagramHandle,
+          instagramEnabled: Boolean(row.sp_instagramEnabled),
+          websiteUrl: row.sp_websiteUrl,
+          websiteEnabled: Boolean(row.sp_websiteEnabled),
+          whatsappNumber: row.sp_whatsappNumber,
+          whatsappEnabled: Boolean(row.sp_whatsappEnabled),
+        }
+      : null,
+    totalScans: Number(row.totalScans || 0),
+    qrScans: Number(row.qrScans || 0),
+    nfcScans: Number(row.nfcScans || 0),
+    createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString(),
+  }));
 
-  const devices = await prisma.device.findMany({
-    where: whereCondition,
-    include: {
-      business: true,
-      smartProfile: {
-        include: { customLinks: true },
-      },
-      _count: {
-        select: { scanEvents: true },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  // Calcular conteo exacto de QR vs NFC por placa
-  const devicesWithStats = await Promise.all(
-    devices.map(async (d) => {
-      const qrScans = await prisma.scanEvent.count({
-        where: { deviceId: d.id, source: "QR" },
-      });
-      const nfcScans = await prisma.scanEvent.count({
-        where: { deviceId: d.id, source: "NFC" },
-      });
-
-      return {
-        ...d,
-        totalScans: d._count.scanEvents,
-        qrScans,
-        nfcScans,
-      };
-    })
-  );
-
-  return NextResponse.json({ devices: devicesWithStats });
+  return NextResponse.json({ devices });
 }
 
 export async function POST(request: Request) {
@@ -62,8 +88,8 @@ export async function POST(request: Request) {
     const {
       businessName,
       existingBusinessId,
-      mode = "SMART_PROFILE", // "DIRECT_REDIRECT" (Estático) o "SMART_PROFILE" (Dinámico)
-      staticDestinationType = "google", // google, facebook, instagram, website, whatsapp, custom
+      mode = "SMART_PROFILE",
+      staticDestinationType = "google",
       customDestinationUrl,
       googleReviewUrl,
       facebook,
@@ -80,58 +106,75 @@ export async function POST(request: Request) {
     }
 
     // 1. Obtener o crear el Negocio
-    let business;
+    let business: any = null;
     if (existingBusinessId && existingBusinessId !== "new") {
-      business = await prisma.business.findUnique({
-        where: { id: existingBusinessId },
-      });
+      business = await queryOne(
+        "SELECT * FROM businesses WHERE id = ? LIMIT 1",
+        [existingBusinessId]
+      );
       if (business) {
-        // Actualizar parámetros adicionales si se suministraron
-        business = await prisma.business.update({
-          where: { id: business.id },
-          data: {
-            googleReviewUrl: googleReviewUrl || business.googleReviewUrl,
-            facebook: facebook || business.facebook,
-            instagram: instagram || business.instagram,
-            website: website || business.website,
-            whatsapp: whatsapp || business.whatsapp,
-          },
-        });
+        await execute(
+          `UPDATE businesses SET 
+            googleReviewUrl = COALESCE(?, googleReviewUrl),
+            facebook = COALESCE(?, facebook),
+            instagram = COALESCE(?, instagram),
+            website = COALESCE(?, website),
+            whatsapp = COALESCE(?, whatsapp),
+            updatedAt = NOW(3)
+          WHERE id = ?`,
+          [
+            googleReviewUrl || null,
+            facebook || null,
+            instagram || null,
+            website || null,
+            whatsapp || null,
+            business.id,
+          ]
+        );
+        business = await queryOne("SELECT * FROM businesses WHERE id = ? LIMIT 1", [business.id]);
       }
     }
 
     if (!business) {
       const finalName = businessName.trim();
-      const baseSlug = finalName
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "negocio";
-      
+      const baseSlug =
+        finalName
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "") || "negocio";
+
       const randomSuffix = Math.random().toString(36).substring(2, 6);
       const slug = `${baseSlug}-${randomSuffix}`;
+      const businessId = crypto.randomUUID();
 
-      business = await prisma.business.create({
-        data: {
-          userId: user.id,
-          name: finalName,
-          slug: slug,
-          category: "General",
-          googleReviewUrl: googleReviewUrl || null,
-          facebook: facebook || null,
-          instagram: instagram || null,
-          website: website || null,
-          whatsapp: whatsapp || null,
-        },
-      });
+      await execute(
+        `INSERT INTO businesses (id, userId, name, slug, category, googleReviewUrl, facebook, instagram, website, whatsapp, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
+        [
+          businessId,
+          user.id,
+          finalName,
+          slug,
+          "General",
+          googleReviewUrl || null,
+          facebook || null,
+          instagram || null,
+          website || null,
+          whatsapp || null,
+        ]
+      );
+
+      business = await queryOne("SELECT * FROM businesses WHERE id = ? LIMIT 1", [businessId]);
     }
 
     // 2. Generar Código Único para la Placa derivado del nombre del negocio
-    const namePrefix = business.name
-      .replace(/[^a-zA-Z0-9]/g, "")
-      .slice(0, 4)
-      .toUpperCase() || "ZL";
+    const namePrefix =
+      business.name
+        .replace(/[^a-zA-Z0-9]/g, "")
+        .slice(0, 4)
+        .toUpperCase() || "ZL";
     const randomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
     const plateCode = `ZL-${namePrefix}-${randomCode}`;
     const activationPin = Math.floor(1000 + Math.random() * 9000).toString();
@@ -140,7 +183,8 @@ export async function POST(request: Request) {
     let finalDestinationUrl: string | null = null;
     if (mode === "DIRECT_REDIRECT") {
       if (staticDestinationType === "google") {
-        finalDestinationUrl = googleReviewUrl || business.googleReviewUrl || "https://search.google.com/local/writereview";
+        finalDestinationUrl =
+          googleReviewUrl || business.googleReviewUrl || "https://search.google.com/local/writereview";
       } else if (staticDestinationType === "facebook") {
         finalDestinationUrl = facebook || business.facebook || "https://facebook.com";
       } else if (staticDestinationType === "instagram") {
@@ -152,55 +196,89 @@ export async function POST(request: Request) {
         const num = (whatsapp || business.whatsapp || "").replace(/[^0-9]/g, "");
         finalDestinationUrl = num ? `https://wa.me/${num}` : "https://whatsapp.com";
       } else {
-        finalDestinationUrl = customDestinationUrl || business.googleReviewUrl || "https://search.google.com/local/writereview";
+        finalDestinationUrl =
+          customDestinationUrl || business.googleReviewUrl || "https://search.google.com/local/writereview";
       }
     }
 
     // 4. Crear la Placa (Device) en MySQL
-    const device = await prisma.device.create({
-      data: {
-        code: plateCode,
-        activationPin: activationPin,
-        status: "ACTIVE",
-        mode: mode as "DIRECT_REDIRECT" | "SMART_PROFILE",
-        customDestinationUrl: finalDestinationUrl,
-        businessId: business.id,
-      },
-    });
+    const deviceId = crypto.randomUUID();
+    await execute(
+      `INSERT INTO devices (id, code, activationPin, status, mode, customDestinationUrl, businessId, createdAt, updatedAt)
+       VALUES (?, ?, ?, 'ACTIVE', ?, ?, ?, NOW(3), NOW(3))`,
+      [deviceId, plateCode, activationPin, mode, finalDestinationUrl, business.id]
+    );
 
     // 5. Crear el SmartProfile con todos los datos y redes
-    await prisma.smartProfile.create({
-      data: {
-        deviceId: device.id,
+    const smartProfileId = crypto.randomUUID();
+    const fbEnabled = Boolean(facebook || business.facebook) ? 1 : 0;
+    const igEnabled = Boolean(instagram || business.instagram) ? 1 : 0;
+    const webEnabled = Boolean(website || business.website) ? 1 : 0;
+    const waEnabled = Boolean(whatsapp || business.whatsapp) ? 1 : 0;
+
+    await execute(
+      `INSERT INTO smart_profiles (
+        id, deviceId, title, description, theme, 
+        googleReviewUrl, googleReviewEnabled,
+        facebookUrl, facebookEnabled,
+        instagramHandle, instagramEnabled,
+        websiteUrl, websiteEnabled,
+        whatsappNumber, whatsappEnabled,
+        createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
+      [
+        smartProfileId,
+        deviceId,
+        business.name,
+        "¡Gracias por visitarnos! Califica tu experiencia y conéctate con nuestras redes.",
+        "dark_gold",
+        googleReviewUrl || business.googleReviewUrl,
+        facebook || business.facebook,
+        fbEnabled,
+        instagram || business.instagram,
+        igEnabled,
+        website || business.website,
+        webEnabled,
+        whatsapp || business.whatsapp,
+        waEnabled,
+      ]
+    );
+
+    const fullDevice = {
+      id: deviceId,
+      code: plateCode,
+      activationPin,
+      status: "ACTIVE",
+      mode,
+      customDestinationUrl: finalDestinationUrl,
+      businessId: business.id,
+      business,
+      smartProfile: {
+        id: smartProfileId,
         title: business.name,
         description: "¡Gracias por visitarnos! Califica tu experiencia y conéctate con nuestras redes.",
-        theme: "dark_gold",
         googleReviewUrl: googleReviewUrl || business.googleReviewUrl,
         googleReviewEnabled: true,
         facebookUrl: facebook || business.facebook,
-        facebookEnabled: !!(facebook || business.facebook),
+        facebookEnabled: Boolean(fbEnabled),
         instagramHandle: instagram || business.instagram,
-        instagramEnabled: !!(instagram || business.instagram),
+        instagramEnabled: Boolean(igEnabled),
         websiteUrl: website || business.website,
-        websiteEnabled: !!(website || business.website),
+        websiteEnabled: Boolean(webEnabled),
         whatsappNumber: whatsapp || business.whatsapp,
-        whatsappEnabled: !!(whatsapp || business.whatsapp),
+        whatsappEnabled: Boolean(waEnabled),
       },
-    });
-
-    const fullDevice = await prisma.device.findUnique({
-      where: { id: device.id },
-      include: {
-        business: true,
-        smartProfile: true,
-      },
-    });
+      totalScans: 0,
+      qrScans: 0,
+      nfcScans: 0,
+      createdAt: new Date().toISOString(),
+    };
 
     return NextResponse.json({
       success: true,
       device: fullDevice,
-      qrUrl: `/r/${device.code}?src=qr`,
-      nfcUrl: `/r/${device.code}?src=nfc`,
+      qrUrl: `/r/${plateCode}?src=qr`,
+      nfcUrl: `/r/${plateCode}?src=nfc`,
     });
   } catch (error: any) {
     console.error("Error creating device:", error);

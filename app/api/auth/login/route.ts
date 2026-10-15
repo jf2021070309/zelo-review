@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { queryOne, query } from "@/lib/db";
 import { verifyPassword, signToken, AUTH_COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(request: Request) {
@@ -13,16 +13,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase().trim() },
-      include: {
-        businesses: {
-          include: {
-            devices: true,
-          },
-        },
-      },
-    });
+    const user = await queryOne<{
+      id: string;
+      email: string;
+      password: string;
+      name: string;
+      role: string;
+    }>("SELECT id, email, password, name, role FROM users WHERE email = ? LIMIT 1", [
+      email.toLowerCase().trim(),
+    ]);
 
     if (!user) {
       return NextResponse.json(
@@ -39,10 +38,15 @@ export async function POST(request: Request) {
       );
     }
 
+    const businesses = await query(
+      "SELECT id, name, slug FROM businesses WHERE userId = ?",
+      [user.id]
+    );
+
     const token = signToken({
       userId: user.id,
       email: user.email,
-      role: user.role,
+      role: user.role as "ADMIN" | "BUSINESS_OWNER",
       name: user.name,
     });
 
@@ -53,9 +57,9 @@ export async function POST(request: Request) {
         name: user.name,
         email: user.email,
         role: user.role,
-        businesses: user.businesses,
+        businesses,
       },
-      redirectTo: user.role === "ADMIN" ? "/admin" : "/dashboard",
+      redirectTo: "/dashboard",
     });
 
     response.cookies.set({

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { queryOne } from "@/lib/db";
 import { recordScanEvent } from "@/lib/analytics";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(
   request: NextRequest,
@@ -19,16 +21,17 @@ export async function GET(
   const ip = forwardedFor ? forwardedFor.split(",")[0].trim() : undefined;
 
   try {
-    const device = await prisma.device.findUnique({
-      where: { code },
-      include: {
-        business: true,
-        smartProfile: true,
-      },
-    });
+    const device = await queryOne<any>(
+      `SELECT d.*, b.name as businessName, b.googleReviewUrl as businessGoogleReviewUrl
+       FROM devices d
+       LEFT JOIN businesses b ON d.businessId = b.id
+       WHERE d.code = ?
+       LIMIT 1`,
+      [code]
+    );
 
     if (!device) {
-      return NextResponse.redirect(new URL(`/claim/${code}?notfound=1`, request.url));
+      return NextResponse.redirect(new URL(`/login`, request.url));
     }
 
     // Record scan asynchronously (non-blocking)
@@ -39,12 +42,7 @@ export async function GET(
       ip: ip,
     }).catch((err) => console.error("Scan logging error:", err));
 
-    // Case 1: Unassigned / New Plate -> Send to Activation Claim Page
-    if (device.status === "READY_TO_ASSIGN" || !device.businessId) {
-      return NextResponse.redirect(new URL(`/claim/${device.code}`, request.url));
-    }
-
-    // Case 2: Suspended
+    // Case 1: Suspended
     if (device.status === "SUSPENDED") {
       return new NextResponse(
         "Esta placa se encuentra temporalmente inactiva. Contacte al administrador.",
@@ -52,16 +50,15 @@ export async function GET(
       );
     }
 
-    // Case 3: Smart Bio-Link Hub Mode
+    // Case 2: Smart Bio-Link Hub Mode
     if (device.mode === "SMART_PROFILE") {
-      // Redirect to the interactive profile page
       return NextResponse.redirect(new URL(`/r/${device.code}/profile`, request.url));
     }
 
-    // Case 4: Direct Redirect Mode (Google Reviews or Custom URL)
+    // Case 3: Direct Redirect Mode (Google Reviews or Custom URL)
     const destination =
       device.customDestinationUrl ||
-      device.business?.googleReviewUrl ||
+      device.businessGoogleReviewUrl ||
       "https://search.google.com/local/writereview";
 
     return NextResponse.redirect(destination, { status: 302 });

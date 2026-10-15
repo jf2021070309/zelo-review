@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { queryOne, execute } from "@/lib/db";
 import { getSession, hashPassword, signToken, AUTH_COOKIE_NAME } from "@/lib/auth";
+import crypto from "crypto";
 
 export async function POST(request: Request) {
   try {
@@ -13,10 +14,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const device = await prisma.device.findUnique({
-      where: { code: code.toUpperCase().trim() },
-      include: { business: true },
-    });
+    const device = await queryOne<any>(
+      "SELECT * FROM devices WHERE code = ? LIMIT 1",
+      [code.toUpperCase().trim()]
+    );
 
     if (!device) {
       return NextResponse.json(
@@ -39,30 +40,29 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check if user is currently logged in
     const session = await getSession();
     let businessId: string | null = null;
     let newAuthToken: string | null = null;
 
     if (session) {
-      // Use existing user's first business or create one
-      let userBusiness = await prisma.business.findFirst({
-        where: { userId: session.userId },
-      });
+      let userBusiness = await queryOne<any>(
+        "SELECT id FROM businesses WHERE userId = ? LIMIT 1",
+        [session.userId]
+      );
 
       if (!userBusiness) {
-        userBusiness = await prisma.business.create({
-          data: {
-            userId: session.userId,
-            name: businessName || "Mi Negocio",
-            slug: (businessName || "mi-negocio").toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.floor(1000 + Math.random() * 9000),
-            googleReviewUrl: googleReviewUrl || "https://search.google.com/local/writereview",
-          },
-        });
+        const newBusinessId = crypto.randomUUID();
+        const slug = (businessName || "mi-negocio").toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.floor(1000 + Math.random() * 9000);
+        await execute(
+          `INSERT INTO businesses (id, userId, name, slug, googleReviewUrl, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, NOW(3), NOW(3))`,
+          [newBusinessId, session.userId, businessName || "Mi Negocio", slug, googleReviewUrl || "https://search.google.com/local/writereview"]
+        );
+        businessId = newBusinessId;
+      } else {
+        businessId = userBusiness.id;
       }
-      businessId = userBusiness.id;
     } else {
-      // New user registration flow during claim
       if (!email || !password || !businessName) {
         return NextResponse.json(
           { error: "Por favor completa tus datos para registrar y activar tu placa." },
@@ -70,32 +70,31 @@ export async function POST(request: Request) {
         );
       }
 
-      let user = await prisma.user.findUnique({
-        where: { email: email.toLowerCase().trim() },
-      });
+      let user = await queryOne<any>(
+        "SELECT * FROM users WHERE email = ? LIMIT 1",
+        [email.toLowerCase().trim()]
+      );
 
       if (!user) {
+        const newUserId = crypto.randomUUID();
         const hashedPassword = await hashPassword(password);
-        user = await prisma.user.create({
-          data: {
-            email: email.toLowerCase().trim(),
-            name: businessName,
-            password: hashedPassword,
-            role: "BUSINESS_OWNER",
-          },
-        });
+        await execute(
+          `INSERT INTO users (id, email, password, name, role, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, 'BUSINESS_OWNER', NOW(3), NOW(3))`,
+          [newUserId, email.toLowerCase().trim(), hashedPassword, businessName]
+        );
+        user = { id: newUserId, email: email.toLowerCase().trim(), name: businessName, role: "BUSINESS_OWNER" };
       }
 
-      const business = await prisma.business.create({
-        data: {
-          userId: user.id,
-          name: businessName,
-          slug: businessName.toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.floor(1000 + Math.random() * 9000),
-          googleReviewUrl: googleReviewUrl || "https://search.google.com/local/writereview",
-        },
-      });
+      const newBusinessId = crypto.randomUUID();
+      const slug = businessName.toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.floor(1000 + Math.random() * 9000);
+      await execute(
+        `INSERT INTO businesses (id, userId, name, slug, googleReviewUrl, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, NOW(3), NOW(3))`,
+        [newBusinessId, user.id, businessName, slug, googleReviewUrl || "https://search.google.com/local/writereview"]
+      );
 
-      businessId = business.id;
+      businessId = newBusinessId;
 
       newAuthToken = signToken({
         userId: user.id,
@@ -105,15 +104,17 @@ export async function POST(request: Request) {
       });
     }
 
-    // Activate and assign device
-    const updatedDevice = await prisma.device.update({
-      where: { id: device.id },
-      data: {
-        status: "ACTIVE",
-        businessId: businessId,
-        customDestinationUrl: googleReviewUrl || undefined,
-      },
-    });
+    await execute(
+      `UPDATE devices SET 
+        status = 'ACTIVE', 
+        businessId = ?, 
+        customDestinationUrl = COALESCE(?, customDestinationUrl),
+        updatedAt = NOW(3)
+       WHERE id = ?`,
+      [businessId, googleReviewUrl || null, device.id]
+    );
+
+    const updatedDevice = await queryOne("SELECT * FROM devices WHERE id = ? LIMIT 1", [device.id]);
 
     const response = NextResponse.json({
       success: true,

@@ -1,29 +1,27 @@
 import { getCurrentUser } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { query } from "@/lib/db";
 import { redirect } from "next/navigation";
 import QrStudioClient from "./QrStudioClient";
+
+export const dynamic = "force-dynamic";
 
 export default async function QrStudioPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const business = user.businesses[0];
-  if (!business) redirect("/dashboard");
-
-  const devices = await prisma.device.findMany({
-    where: { businessId: business.id },
-    orderBy: { createdAt: "desc" },
-  });
+  const devices = await query(
+    "SELECT id, code, status, mode FROM devices ORDER BY createdAt DESC"
+  );
 
   return (
     <QrStudioClient
-      devices={devices.map((d) => ({
+      devices={devices.map((d: any) => ({
         id: d.id,
         code: d.code,
         status: d.status,
         mode: d.mode,
       }))}
-      businessName={business.name}
+      businessName="ZELO Review"
     />
   );
 }

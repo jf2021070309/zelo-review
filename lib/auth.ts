@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
-import { prisma } from "./prisma";
+import { queryOne, query } from "./db";
 
 const JWT_SECRET = process.env.JWT_SECRET || "zelo-default-dev-secret-key-change-in-production";
 const COOKIE_NAME = "zelo_auth_token";
@@ -46,17 +46,21 @@ export async function getCurrentUser() {
   if (!session) return null;
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      include: {
-        businesses: {
-          include: {
-            devices: true,
-          },
-        },
-      },
-    });
-    return user;
+    const user = await queryOne<any>(
+      "SELECT id, email, name, role FROM users WHERE id = ? LIMIT 1",
+      [session.userId]
+    );
+    if (!user) return null;
+
+    const businesses = await query<any>(
+      "SELECT * FROM businesses WHERE userId = ? ORDER BY createdAt DESC",
+      [user.id]
+    );
+
+    return {
+      ...user,
+      businesses,
+    };
   } catch (error) {
     console.error("Error fetching current user:", error);
     return null;

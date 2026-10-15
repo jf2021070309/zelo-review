@@ -1,5 +1,5 @@
 import { UAParser } from "ua-parser-js";
-import { prisma } from "./prisma";
+import { execute } from "./db";
 import crypto from "crypto";
 
 export interface ScanMetadata {
@@ -11,7 +11,6 @@ export interface ScanMetadata {
 
 export function hashIp(ip: string | undefined): string | null {
   if (!ip) return null;
-  // Anonymize IP to comply with privacy best practices
   return crypto.createHash("sha256").update(ip + "zelo_salt").digest("hex").slice(0, 16);
 }
 
@@ -23,20 +22,23 @@ export async function recordScanEvent(metadata: ScanMetadata) {
     const deviceType = parser.getDevice().type || (os === "iOS" || os === "Android" ? "mobile" : "desktop");
 
     const ipHash = hashIp(metadata.ip);
+    const eventId = crypto.randomUUID();
 
-    await prisma.scanEvent.create({
-      data: {
-        deviceId: metadata.deviceId,
-        source: metadata.source,
-        ipHash: ipHash,
-        userAgent: metadata.userAgent?.slice(0, 500),
-        deviceType: deviceType,
-        os: os,
-        browser: browser,
-      },
-    });
+    await execute(
+      `INSERT INTO scan_events (id, deviceId, source, ipHash, userAgent, deviceType, os, browser, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(3))`,
+      [
+        eventId,
+        metadata.deviceId,
+        metadata.source,
+        ipHash,
+        metadata.userAgent?.slice(0, 500) || null,
+        deviceType,
+        os,
+        browser,
+      ]
+    );
   } catch (error) {
     console.error("Error recording scan event:", error);
-    // Non-blocking: fail silently so redirect is never broken for visitors
   }
 }
