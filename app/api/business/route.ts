@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { queryOne, execute } from "@/lib/db";
+import { ensureHttpUrl, normalizeInstagramUrl, normalizeFacebookUrl } from "@/lib/utils";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -44,12 +45,12 @@ export async function PATCH(request: Request) {
       [
         name || null,
         category || null,
-        googleReviewUrl || null,
+        googleReviewUrl ? ensureHttpUrl(googleReviewUrl) : (googleReviewUrl === "" ? null : null),
         phone || null,
         whatsapp || null,
-        instagram || null,
-        facebook || null,
-        website || null,
+        instagram ? normalizeInstagramUrl(instagram) : (instagram === "" ? null : null),
+        facebook ? normalizeFacebookUrl(facebook) : (facebook === "" ? null : null),
+        website ? ensureHttpUrl(website) : (website === "" ? null : null),
         address || null,
         logoUrl || null,
         business.id,

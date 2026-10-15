@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { queryOne } from "@/lib/db";
 import { recordScanEvent } from "@/lib/analytics";
+import { ensureHttpUrl } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -73,10 +74,12 @@ export async function GET(
     }
 
     // Case 3: Direct Redirect Mode (Google Reviews o URL personalizada)
-    const destination =
+    const rawDestination =
       device.customDestinationUrl ||
       device.businessGoogleReviewUrl ||
       "https://search.google.com/local/writereview";
+
+    const destination = ensureHttpUrl(rawDestination);
 
     return NextResponse.redirect(destination, { status: 302 });
   } catch (error) {

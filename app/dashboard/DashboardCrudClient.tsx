@@ -31,6 +31,13 @@ import {
   Utensils,
   Music,
 } from "lucide-react";
+import {
+  normalizeChannelValue,
+  ensureHttpUrl,
+  normalizeInstagramUrl,
+  normalizeFacebookUrl,
+  normalizeTiktokUrl,
+} from "@/lib/utils";
 
 export type PlateChannelType =
   | "google"
@@ -69,21 +76,21 @@ export const AVAILABLE_CHANNEL_TYPES: Array<{
     label: "📘 Facebook",
     iconName: "facebook",
     defaultTitle: "Facebook",
-    placeholder: "https://facebook.com/tunegocio",
+    placeholder: "https://www.facebook.com/tunegocio",
   },
   {
     type: "instagram",
     label: "📸 Instagram",
     iconName: "instagram",
     defaultTitle: "Instagram",
-    placeholder: "@tunegocio o https://instagram.com/tunegocio",
+    placeholder: "https://www.instagram.com/tunegocio",
   },
   {
     type: "whatsapp",
     label: "💬 WhatsApp",
     iconName: "whatsapp",
     defaultTitle: "WhatsApp",
-    placeholder: "Ej: +51 987654321",
+    placeholder: "+51 987654321 o enlace https://wa.me/51987654321",
   },
   {
     type: "website",
@@ -97,7 +104,7 @@ export const AVAILABLE_CHANNEL_TYPES: Array<{
     label: "🎵 TikTok",
     iconName: "tiktok",
     defaultTitle: "TikTok",
-    placeholder: "@tunegocio o https://tiktok.com/@tunegocio",
+    placeholder: "https://www.tiktok.com/@tunegocio",
   },
   {
     type: "maps",
@@ -330,6 +337,14 @@ export default function DashboardCrudClient({
     }
   };
 
+  const handleChannelBlur = (target: "create" | "edit", id: string, type: PlateChannelType, val: string) => {
+    if (!val || !val.trim()) return;
+    const normalized = normalizeChannelValue(type, val);
+    if (normalized !== val) {
+      handleChannelValueChange(target, id, normalized);
+    }
+  };
+
   // Convertidor de Google Place ID
   const applyInlinePlaceId = (target: "create" | "edit", customId?: string) => {
     const raw = (customId ?? (target === "create" ? inlinePlaceId : inlineEditPlaceId)).trim();
@@ -413,11 +428,11 @@ export default function DashboardCrudClient({
       if (b) {
         setFormBusinessName(b.name);
         const chs: PlateChannel[] = [];
-        if (b.googleReviewUrl) chs.push({ id: "google", type: "google", title: "Google Reviews", value: b.googleReviewUrl });
-        if (b.facebook) chs.push({ id: "facebook", type: "facebook", title: "Facebook", value: b.facebook });
-        if (b.instagram) chs.push({ id: "instagram", type: "instagram", title: "Instagram", value: b.instagram });
+        if (b.googleReviewUrl) chs.push({ id: "google", type: "google", title: "Google Reviews", value: ensureHttpUrl(b.googleReviewUrl) });
+        if (b.facebook) chs.push({ id: "facebook", type: "facebook", title: "Facebook", value: normalizeFacebookUrl(b.facebook) });
+        if (b.instagram) chs.push({ id: "instagram", type: "instagram", title: "Instagram", value: normalizeInstagramUrl(b.instagram) });
         if (b.whatsapp) chs.push({ id: "whatsapp", type: "whatsapp", title: "WhatsApp", value: b.whatsapp });
-        if (b.website) chs.push({ id: "website", type: "website", title: "Página Web Oficial", value: b.website });
+        if (b.website) chs.push({ id: "website", type: "website", title: "Página Web Oficial", value: ensureHttpUrl(b.website) });
 
         if (chs.length === 0) {
           chs.push({ id: "google", type: "google", title: "Google Reviews", value: "" });
@@ -435,13 +450,18 @@ export default function DashboardCrudClient({
     setCreateError(null);
 
     try {
+      const normalizedChannels = createChannels.map((c) => ({
+        ...c,
+        value: normalizeChannelValue(c.type, c.value),
+      }));
+
       const payload = {
         businessName: formBusinessName,
         existingBusinessId: businessSelection === "new" ? null : businessSelection,
         mode: formMode,
         staticDestinationType: formStaticDestination,
-        customDestinationUrl: formCustomUrl,
-        channels: createChannels,
+        customDestinationUrl: formCustomUrl ? ensureHttpUrl(formCustomUrl) : null,
+        channels: normalizedChannels,
       };
 
       const res = await fetch("/api/devices", {
@@ -515,33 +535,34 @@ export default function DashboardCrudClient({
     // Armar canales desde los datos actuales del dispositivo
     const chs: PlateChannel[] = [];
     const gUrl = dev.smartProfile?.googleReviewUrl || dev.business?.googleReviewUrl;
-    if (gUrl) chs.push({ id: "google", type: "google", title: "Google Reviews", value: gUrl });
+    if (gUrl) chs.push({ id: "google", type: "google", title: "Google Reviews", value: ensureHttpUrl(gUrl) });
 
     const fbUrl = dev.smartProfile?.facebookUrl || dev.business?.facebook;
-    if (fbUrl) chs.push({ id: "facebook", type: "facebook", title: "Facebook", value: fbUrl });
+    if (fbUrl) chs.push({ id: "facebook", type: "facebook", title: "Facebook", value: normalizeFacebookUrl(fbUrl) });
 
     const igUrl = dev.smartProfile?.instagramHandle || dev.business?.instagram;
-    if (igUrl) chs.push({ id: "instagram", type: "instagram", title: "Instagram", value: igUrl });
+    if (igUrl) chs.push({ id: "instagram", type: "instagram", title: "Instagram", value: normalizeInstagramUrl(igUrl) });
 
     const waNum = dev.smartProfile?.whatsappNumber || dev.business?.whatsapp;
     if (waNum) chs.push({ id: "whatsapp", type: "whatsapp", title: "WhatsApp", value: waNum });
 
     const webUrl = dev.smartProfile?.websiteUrl || dev.business?.website;
-    if (webUrl) chs.push({ id: "website", type: "website", title: "Página Web Oficial", value: webUrl });
+    if (webUrl) chs.push({ id: "website", type: "website", title: "Página Web Oficial", value: ensureHttpUrl(webUrl) });
 
     const mUrl = dev.smartProfile?.menuUrl;
-    if (mUrl) chs.push({ id: "menu", type: "menu", title: "Menú / Carta Digital", value: mUrl });
+    if (mUrl) chs.push({ id: "menu", type: "menu", title: "Menú / Carta Digital", value: ensureHttpUrl(mUrl) });
 
     const mapsUrl = dev.smartProfile?.googleMapsUrl;
-    if (mapsUrl) chs.push({ id: "maps", type: "maps", title: "Google Maps", value: mapsUrl });
+    if (mapsUrl) chs.push({ id: "maps", type: "maps", title: "Google Maps", value: ensureHttpUrl(mapsUrl) });
 
     if (dev.smartProfile?.customLinks && dev.smartProfile.customLinks.length > 0) {
       dev.smartProfile.customLinks.forEach((cl, i) => {
+        const isTiktok = cl.icon === "music";
         chs.push({
           id: `custom_${cl.id || i}`,
-          type: cl.icon === "music" ? "tiktok" : "custom",
+          type: isTiktok ? "tiktok" : "custom",
           title: cl.title,
-          value: cl.url,
+          value: isTiktok ? normalizeTiktokUrl(cl.url) : ensureHttpUrl(cl.url),
         });
       });
     }
@@ -562,11 +583,16 @@ export default function DashboardCrudClient({
     setEditError(null);
 
     try {
+      const normalizedChannels = editChannels.map((c) => ({
+        ...c,
+        value: normalizeChannelValue(c.type, c.value),
+      }));
+
       const payload = {
         businessName: editBusinessName,
         mode: editMode,
-        customDestinationUrl: editCustomUrl || null,
-        channels: editChannels,
+        customDestinationUrl: editCustomUrl ? ensureHttpUrl(editCustomUrl) : null,
+        channels: normalizedChannels,
       };
 
       const res = await fetch(`/api/devices/${editingDevice.id}`, {
@@ -578,15 +604,15 @@ export default function DashboardCrudClient({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al actualizar la placa.");
 
-      // Extraer campos clave
-      const gReview = editChannels.find((c) => c.type === "google")?.value || "";
-      const fb = editChannels.find((c) => c.type === "facebook")?.value || "";
-      const ig = editChannels.find((c) => c.type === "instagram")?.value || "";
-      const wa = editChannels.find((c) => c.type === "whatsapp")?.value || "";
-      const web = editChannels.find((c) => c.type === "website")?.value || "";
-      const menu = editChannels.find((c) => c.type === "menu")?.value || "";
-      const maps = editChannels.find((c) => c.type === "maps")?.value || "";
-      const customLinks = editChannels
+      // Extraer campos clave normalizados
+      const gReview = normalizedChannels.find((c) => c.type === "google")?.value || "";
+      const fb = normalizedChannels.find((c) => c.type === "facebook")?.value || "";
+      const ig = normalizedChannels.find((c) => c.type === "instagram")?.value || "";
+      const wa = normalizedChannels.find((c) => c.type === "whatsapp")?.value || "";
+      const web = normalizedChannels.find((c) => c.type === "website")?.value || "";
+      const menu = normalizedChannels.find((c) => c.type === "menu")?.value || "";
+      const maps = normalizedChannels.find((c) => c.type === "maps")?.value || "";
+      const customLinks = normalizedChannels
         .filter((c) => c.type === "custom" || c.type === "tiktok")
         .map((cl, i) => ({
           id: cl.id,
@@ -1080,13 +1106,14 @@ export default function DashboardCrudClient({
                             <Eye className="w-3.5 h-3.5" />
                           </a>
 
-                          {/* Ver / Descargar QR */}
+                          {/* Ver Enlaces QR y NFC / Descargar QR */}
                           <button
                             onClick={() => setQrModalDevice(dev)}
-                            title="Ver y Descargar Código QR"
-                            className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition"
+                            title="Ver Enlaces (QR y NFC) / Descargar QR"
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 hover:text-white border border-emerald-500/30 transition flex items-center gap-1.5 text-xs font-semibold"
                           >
-                            <QrCode className="w-3.5 h-3.5" />
+                            <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="text-[11px] font-bold">QR / NFC</span>
                           </button>
 
                           {/* Editar (Update) */}
@@ -1308,6 +1335,7 @@ export default function DashboardCrudClient({
                             type="url"
                             value={ch.value}
                             onChange={(e) => handleChannelValueChange("create", ch.id, e.target.value)}
+                            onBlur={() => handleChannelBlur("create", ch.id, ch.type, ch.value)}
                             placeholder="https://search.google.com/local/writereview?placeid=..."
                             className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-amber-500"
                           />
@@ -1342,6 +1370,7 @@ export default function DashboardCrudClient({
                             type="url"
                             value={ch.value}
                             onChange={(e) => handleChannelValueChange("create", ch.id, e.target.value)}
+                            onBlur={() => handleChannelBlur("create", ch.id, ch.type, ch.value)}
                             placeholder="https://..."
                             className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-indigo-500"
                           />
@@ -1376,17 +1405,18 @@ export default function DashboardCrudClient({
                           type="text"
                           value={ch.value}
                           onChange={(e) => handleChannelValueChange("create", ch.id, e.target.value)}
+                          onBlur={() => handleChannelBlur("create", ch.id, ch.type, ch.value)}
                           placeholder={
                             ch.type === "facebook"
-                              ? "https://facebook.com/tunegocio"
+                              ? "https://www.facebook.com/tunegocio"
                               : ch.type === "instagram"
-                              ? "@tunegocio o https://instagram.com/..."
+                              ? "https://www.instagram.com/tunegocio"
                               : ch.type === "whatsapp"
-                              ? "Ej: +51 987654321"
+                              ? "+51 987654321 o enlace https://wa.me/51987654321"
                               : ch.type === "website"
                               ? "https://tunegocio.com"
                               : ch.type === "tiktok"
-                              ? "@tunegocio o https://tiktok.com/@..."
+                              ? "https://www.tiktok.com/@tunegocio"
                               : ch.type === "maps"
                               ? "https://maps.google.com/?cid=..."
                               : "https://menu.tunegocio.com"
@@ -1676,9 +1706,24 @@ export default function DashboardCrudClient({
             </button>
 
             <div>
-              <span className="font-mono text-xs text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
-                {editingDevice.code}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                  {editingDevice.code}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const dev = editingDevice;
+                    setEditingDevice(null);
+                    setQrModalDevice(dev);
+                  }}
+                  className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1 transition"
+                  title="Ver enlaces QR y NFC de esta placa"
+                >
+                  <QrCode className="w-3 h-3" />
+                  <span>Ver Enlaces QR / NFC</span>
+                </button>
+              </div>
               <h2 className="text-xl font-black text-white mt-2">Editar Configuración de Placa</h2>
               <p className="text-xs text-slate-400">
                 Agrega, edita o elimina canales. Los cambios se actualizan al instante en tiempo real.
@@ -1714,7 +1759,7 @@ export default function DashboardCrudClient({
                       Canales y Enlaces Activos
                     </label>
                     <p className="text-[11px] text-slate-400">
-                      Modifica las URLs o agrega nuevos canales según la necesidad del cliente.
+                      Ingresa el enlace completo con https:// (ej: https://www.instagram.com/tunegocio) para redireccionar correctamente en todos los celulares.
                     </p>
                   </div>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
@@ -1803,6 +1848,7 @@ export default function DashboardCrudClient({
                             type="url"
                             value={ch.value}
                             onChange={(e) => handleChannelValueChange("edit", ch.id, e.target.value)}
+                            onBlur={() => handleChannelBlur("edit", ch.id, ch.type, ch.value)}
                             placeholder="https://search.google.com/local/writereview?placeid=..."
                             className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-amber-500"
                           />
@@ -1837,6 +1883,7 @@ export default function DashboardCrudClient({
                             type="url"
                             value={ch.value}
                             onChange={(e) => handleChannelValueChange("edit", ch.id, e.target.value)}
+                            onBlur={() => handleChannelBlur("edit", ch.id, ch.type, ch.value)}
                             placeholder="https://..."
                             className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-indigo-500"
                           />
@@ -1870,17 +1917,18 @@ export default function DashboardCrudClient({
                           type="text"
                           value={ch.value}
                           onChange={(e) => handleChannelValueChange("edit", ch.id, e.target.value)}
+                          onBlur={() => handleChannelBlur("edit", ch.id, ch.type, ch.value)}
                           placeholder={
                             ch.type === "facebook"
-                              ? "https://facebook.com/tunegocio"
+                              ? "https://www.facebook.com/tunegocio"
                               : ch.type === "instagram"
-                              ? "@tunegocio o https://instagram.com/..."
+                              ? "https://www.instagram.com/tunegocio"
                               : ch.type === "whatsapp"
-                              ? "Ej: +51 987654321"
+                              ? "+51 987654321 o enlace https://wa.me/51987654321"
                               : ch.type === "website"
                               ? "https://tunegocio.com"
                               : ch.type === "tiktok"
-                              ? "@tunegocio o https://tiktok.com/@..."
+                              ? "https://www.tiktok.com/@tunegocio"
                               : ch.type === "maps"
                               ? "https://maps.google.com/?cid=..."
                               : "https://menu.tunegocio.com"
@@ -1988,73 +2036,188 @@ export default function DashboardCrudClient({
       )}
 
       {/* ===================================================================== */}
-      {/* MODAL 4: VER Y DESCARGAR QR DE PLACA EXISTENTE */}
+      {/* MODAL 4: VER Y DESCARGAR QR Y ENLACES NFC DE PLACA EXISTENTE */}
       {/* ===================================================================== */}
-      {qrModalDevice && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-card rounded-2xl border border-slate-800 bg-[#0A0E17] max-w-sm w-full p-6 space-y-4 text-center relative">
-            <button
-              onClick={() => setQrModalDevice(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
+      {qrModalDevice && (() => {
+        const qrUrl = getFullUrl(qrModalDevice.code, "qr");
+        const nfcUrl = getFullUrl(qrModalDevice.code, "nfc");
 
-            <div>
-              <span className="font-mono text-xs font-bold text-white bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
-                {qrModalDevice.code}
-              </span>
-              <h3 className="text-base font-bold text-white mt-2">
-                {qrModalDevice.business?.name || "Placa Zelo"}
-              </h3>
-              <p className="text-xs text-slate-400">
-                Escanea con tu celular para probar la redirección.
-              </p>
-            </div>
-
-            <div className="p-4 bg-white rounded-2xl max-w-[200px] mx-auto shadow-inner flex items-center justify-center">
-              <img
-                src={`/api/qr?text=${encodeURIComponent(getFullUrl(qrModalDevice.code, "qr"))}&format=png`}
-                alt="Código QR"
-                className="w-full h-auto object-contain"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <a
-                href={`/api/qr?text=${encodeURIComponent(getFullUrl(qrModalDevice.code, "qr"))}&format=png&code=${qrModalDevice.code}&download=1`}
-                download
-                className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>PNG 1000px</span>
-              </a>
-              <a
-                href={`/api/qr?text=${encodeURIComponent(getFullUrl(qrModalDevice.code, "qr"))}&format=svg&code=${qrModalDevice.code}&download=1`}
-                download
-                className="py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Vector SVG</span>
-              </a>
-            </div>
-
-            <div className="pt-2">
+        return (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+            <div className="glass-card rounded-2xl border border-slate-800 bg-[#0A0E17] max-w-md w-full p-6 space-y-4 relative my-8">
               <button
-                onClick={() => copyToClipboard(getFullUrl(qrModalDevice.code, "qr"))}
-                className="w-full py-2 px-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white text-xs flex items-center justify-center gap-1.5"
+                onClick={() => setQrModalDevice(null)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white transition"
               >
-                <Copy className="w-3.5 h-3.5" />
-                <span>
-                  {copiedText === getFullUrl(qrModalDevice.code, "qr")
-                    ? "¡Enlace QR Copiado!"
-                    : "Copiar Enlace QR"}
-                </span>
+                <X className="w-5 h-5" />
               </button>
+
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <span className="font-mono text-xs font-bold text-white bg-slate-900 px-2.5 py-1 rounded-md border border-slate-700">
+                    {qrModalDevice.code}
+                  </span>
+                  <span className="font-mono text-xs text-amber-400 bg-amber-500/10 px-2 py-1 rounded-md border border-amber-500/20 flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> PIN: {qrModalDevice.activationPin}
+                  </span>
+                </div>
+                <h3 className="text-lg font-bold text-white">
+                  {qrModalDevice.business?.name || "Placa Zelo"}
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Enlaces físicos para impresión de QR y grabación de chips NFC.
+                </p>
+              </div>
+
+              {/* Previsualización de QR */}
+              <div className="p-3 bg-white rounded-2xl max-w-[170px] mx-auto shadow-inner flex items-center justify-center">
+                <img
+                  src={`/api/qr?text=${encodeURIComponent(qrUrl)}&format=png`}
+                  alt="Código QR"
+                  className="w-full h-auto object-contain"
+                />
+              </div>
+
+              {/* Botones de descarga de QR */}
+              <div className="grid grid-cols-2 gap-2">
+                <a
+                  href={`/api/qr?text=${encodeURIComponent(qrUrl)}&format=png&code=${qrModalDevice.code}&download=1`}
+                  download
+                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Descargar PNG</span>
+                </a>
+                <a
+                  href={`/api/qr?text=${encodeURIComponent(qrUrl)}&format=svg&code=${qrModalDevice.code}&download=1`}
+                  download
+                  className="py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Vector SVG</span>
+                </a>
+              </div>
+
+              {/* Sección de Enlaces Físicos (QR y NFC) */}
+              <div className="space-y-2.5 text-left text-xs pt-1 border-t border-slate-800/80">
+                {/* Enlace QR */}
+                <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>URL PARA CÓDIGO QR:</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono">?src=qr</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-black/50 border border-slate-800/80 font-mono text-[11px] text-slate-300 break-all select-all">
+                    {qrUrl}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="text-[10px] text-slate-400">
+                      Enlace codificado en el QR impreso.
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <a
+                        href={qrUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Probar enlace QR en nueva pestaña"
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium flex items-center gap-1 transition"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>Probar</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(qrUrl)}
+                        className={`px-3 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition ${
+                          copiedText === qrUrl
+                            ? "bg-emerald-600 text-white"
+                            : "bg-slate-800 hover:bg-slate-700 text-slate-200"
+                        }`}
+                      >
+                        {copiedText === qrUrl ? (
+                          <>
+                            <Check className="w-3 h-3 text-white" />
+                            <span>¡Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copiar</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Enlace NFC */}
+                <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-cyan-400 font-bold flex items-center gap-1">
+                      <Smartphone className="w-3.5 h-3.5" />
+                      <span>URL PARA CHIP NFC:</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono">?src=nfc</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-black/50 border border-slate-800/80 font-mono text-[11px] text-slate-300 break-all select-all">
+                    {nfcUrl}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="text-[10px] text-slate-400">
+                      Graba este enlace en el chip NFC (NTAG213/215).
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <a
+                        href={nfcUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Probar enlace NFC en nueva pestaña"
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium flex items-center gap-1 transition"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>Probar</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(nfcUrl)}
+                        className={`px-3 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition ${
+                          copiedText === nfcUrl
+                            ? "bg-cyan-600 text-white"
+                            : "bg-slate-800 hover:bg-slate-700 text-slate-200"
+                        }`}
+                      >
+                        {copiedText === nfcUrl ? (
+                          <>
+                            <Check className="w-3 h-3 text-white" />
+                            <span>¡Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copiar</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setQrModalDevice(null)}
+                  className="w-full py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-semibold transition"
+                >
+                  Cerrar
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ===================================================================== */}
       {/* MODAL 5: CONFIRMACIÓN DE ELIMINACIÓN (DELETE) */}

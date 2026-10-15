@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { query, queryOne, execute } from "@/lib/db";
 import crypto from "crypto";
+import {
+  ensureHttpUrl,
+  normalizeInstagramUrl,
+  normalizeFacebookUrl,
+  normalizeTiktokUrl,
+  normalizeWhatsAppUrl,
+} from "@/lib/utils";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -133,22 +140,34 @@ export async function POST(request: Request) {
       for (const ch of channels) {
         const val = (ch.value || "").trim();
         if (!val) continue;
-        if (ch.type === "google") googleReviewUrl = val;
-        else if (ch.type === "facebook") facebook = val;
-        else if (ch.type === "instagram") instagram = val;
-        else if (ch.type === "website") website = val;
+        if (ch.type === "google") googleReviewUrl = ensureHttpUrl(val);
+        else if (ch.type === "facebook") facebook = normalizeFacebookUrl(val);
+        else if (ch.type === "instagram") instagram = normalizeInstagramUrl(val);
+        else if (ch.type === "website") website = ensureHttpUrl(val);
         else if (ch.type === "whatsapp") whatsapp = val;
-        else if (ch.type === "menu") menuUrl = val;
-        else if (ch.type === "maps") googleMapsUrl = val;
-        else {
+        else if (ch.type === "menu") menuUrl = ensureHttpUrl(val);
+        else if (ch.type === "maps") googleMapsUrl = ensureHttpUrl(val);
+        else if (ch.type === "tiktok") {
+          customLinks.push({
+            id: ch.id,
+            type: ch.type,
+            title: ch.title || "TikTok",
+            value: normalizeTiktokUrl(val),
+          });
+        } else {
           customLinks.push({
             id: ch.id,
             type: ch.type,
             title: ch.title || "Enlace",
-            value: val,
+            value: ensureHttpUrl(val),
           });
         }
       }
+    } else {
+      if (googleReviewUrl) googleReviewUrl = ensureHttpUrl(googleReviewUrl);
+      if (facebook) facebook = normalizeFacebookUrl(facebook);
+      if (instagram) instagram = normalizeInstagramUrl(instagram);
+      if (website) website = ensureHttpUrl(website);
     }
 
     // 1. Obtener o crear el Negocio
@@ -229,40 +248,47 @@ export async function POST(request: Request) {
     let finalDestinationUrl: string | null = null;
     if (mode === "DIRECT_REDIRECT") {
       if (customDestinationUrl) {
-        finalDestinationUrl = customDestinationUrl;
+        finalDestinationUrl = ensureHttpUrl(customDestinationUrl);
       } else if (staticDestinationType === "google") {
-        finalDestinationUrl =
-          googleReviewUrl || business.googleReviewUrl || "https://search.google.com/local/writereview";
+        finalDestinationUrl = ensureHttpUrl(
+          googleReviewUrl || business.googleReviewUrl || "https://search.google.com/local/writereview"
+        );
       } else if (staticDestinationType === "facebook") {
-        finalDestinationUrl = facebook || business.facebook || "https://facebook.com";
+        finalDestinationUrl = normalizeFacebookUrl(facebook || business.facebook || "https://facebook.com");
       } else if (staticDestinationType === "instagram") {
         const ig = instagram || business.instagram || "";
-        finalDestinationUrl = ig.startsWith("http") ? ig : `https://instagram.com/${ig.replace("@", "")}`;
+        finalDestinationUrl = normalizeInstagramUrl(ig);
       } else if (staticDestinationType === "website") {
-        finalDestinationUrl = website || business.website || "https://google.com";
+        finalDestinationUrl = ensureHttpUrl(website || business.website || "https://google.com");
       } else if (staticDestinationType === "whatsapp") {
-        const num = (whatsapp || business.whatsapp || "").replace(/[^0-9]/g, "");
-        finalDestinationUrl = num ? `https://wa.me/${num}` : "https://whatsapp.com";
+        const numOrUrl = whatsapp || business.whatsapp || "";
+        finalDestinationUrl = normalizeWhatsAppUrl(numOrUrl);
       } else if (staticDestinationType === "menu") {
-        finalDestinationUrl = menuUrl || "https://google.com";
+        finalDestinationUrl = ensureHttpUrl(menuUrl || "https://google.com");
       } else if (staticDestinationType === "maps") {
-        finalDestinationUrl = googleMapsUrl || "https://maps.google.com";
+        finalDestinationUrl = ensureHttpUrl(googleMapsUrl || "https://maps.google.com");
       } else {
         // Buscar en customLinks si coincide
         const foundCl = customLinks.find((l) => l.id === staticDestinationType || l.title === staticDestinationType);
         if (foundCl) {
-          finalDestinationUrl = foundCl.value;
+          finalDestinationUrl = ensureHttpUrl(foundCl.value);
         } else {
           // Destino por defecto: primer enlace disponible (Google Reviews preferente)
-          finalDestinationUrl =
-            googleReviewUrl ||
-            business.googleReviewUrl ||
-            facebook ||
-            instagram ||
-            website ||
-            (whatsapp ? `https://wa.me/${whatsapp.replace(/[^0-9]/g, "")}` : null) ||
-            (customLinks[0]?.value) ||
-            "https://search.google.com/local/writereview";
+          if (googleReviewUrl || business.googleReviewUrl) {
+            finalDestinationUrl = ensureHttpUrl(googleReviewUrl || business.googleReviewUrl);
+          } else if (facebook || business.facebook) {
+            finalDestinationUrl = normalizeFacebookUrl(facebook || business.facebook);
+          } else if (instagram || business.instagram) {
+            finalDestinationUrl = normalizeInstagramUrl(instagram || business.instagram);
+          } else if (website || business.website) {
+            finalDestinationUrl = ensureHttpUrl(website || business.website);
+          } else if (whatsapp || business.whatsapp) {
+            finalDestinationUrl = normalizeWhatsAppUrl(whatsapp || business.whatsapp);
+          } else if (customLinks[0]?.value) {
+            finalDestinationUrl = ensureHttpUrl(customLinks[0].value);
+          } else {
+            finalDestinationUrl = "https://search.google.com/local/writereview";
+          }
         }
       }
     }
@@ -328,16 +354,17 @@ export async function POST(request: Request) {
         if (cl.value && cl.value.trim()) {
           const linkId = crypto.randomUUID();
           const icon = cl.type === "tiktok" ? "music" : "globe";
+          const val = cl.type === "tiktok" ? normalizeTiktokUrl(cl.value) : ensureHttpUrl(cl.value);
           await execute(
             `INSERT INTO smart_links (id, profileId, title, url, icon, \`order\`, isActive, createdAt, updatedAt)
              VALUES (?, ?, ?, ?, ?, ?, 1, NOW(3), NOW(3))`,
-            [linkId, smartProfileId, cl.title || "Enlace", cl.value.trim(), icon, i]
+            [linkId, smartProfileId, cl.title || "Enlace", val, icon, i]
           );
           createdCustomLinks.push({
             id: linkId,
             profileId: smartProfileId,
             title: cl.title,
-            url: cl.value.trim(),
+            url: val,
             icon,
             order: i,
             isActive: 1,

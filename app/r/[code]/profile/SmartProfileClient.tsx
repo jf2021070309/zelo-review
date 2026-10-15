@@ -20,6 +20,14 @@ import {
   Music,
   ShoppingBag,
 } from "lucide-react";
+import {
+  ensureHttpUrl,
+  normalizeInstagramUrl,
+  getInstagramDisplayHandle,
+  normalizeFacebookUrl,
+  normalizeTiktokUrl,
+  normalizeWhatsAppUrl,
+} from "@/lib/utils";
 
 interface SmartProfileData {
   title: string;
@@ -84,7 +92,7 @@ export default function SmartProfileClient({
     }
 
     setTimeout(() => {
-      window.open(profile.googleReviewUrl, "_blank");
+      window.open(ensureHttpUrl(profile.googleReviewUrl), "_blank");
     }, 600);
   };
 
@@ -265,9 +273,9 @@ export default function SmartProfileClient({
         {/* SECONDARY ACTION BUTTONS */}
         <div className="w-full space-y-2.5">
           {/* WhatsApp Direct */}
-          {profile.whatsappEnabled && cleanPhone && (
+          {profile.whatsappEnabled && profile.whatsappNumber && (
             <a
-              href={whatsappUrl}
+              href={normalizeWhatsAppUrl(profile.whatsappNumber, profile.whatsappMessage)}
               target="_blank"
               rel="noopener noreferrer"
               className={`w-full flex items-center justify-between p-3.5 rounded-xl border backdrop-blur-md transition-all duration-200 glass-card-hover ${theme.card}`}
@@ -288,7 +296,7 @@ export default function SmartProfileClient({
           {/* Instagram */}
           {profile.instagramEnabled && profile.instagramHandle && (
             <a
-              href={`https://instagram.com/${profile.instagramHandle.replace("@", "")}`}
+              href={normalizeInstagramUrl(profile.instagramHandle)}
               target="_blank"
               rel="noopener noreferrer"
               className={`w-full flex items-center justify-between p-3.5 rounded-xl border backdrop-blur-md transition-all duration-200 glass-card-hover ${theme.card}`}
@@ -299,7 +307,7 @@ export default function SmartProfileClient({
                 </div>
                 <div className="text-left">
                   <div className="font-semibold text-white text-sm">Síguenos en Instagram</div>
-                  <div className="text-xs text-slate-400">@{profile.instagramHandle.replace("@", "")}</div>
+                  <div className="text-xs text-slate-400">{getInstagramDisplayHandle(profile.instagramHandle)}</div>
                 </div>
               </div>
               <ExternalLink className="w-4 h-4 text-slate-400" />
@@ -309,7 +317,7 @@ export default function SmartProfileClient({
           {/* Facebook */}
           {(profile.facebookEnabled ?? true) && profile.facebookUrl && (
             <a
-              href={profile.facebookUrl.startsWith("http") ? profile.facebookUrl : `https://${profile.facebookUrl}`}
+              href={normalizeFacebookUrl(profile.facebookUrl)}
               target="_blank"
               rel="noopener noreferrer"
               className={`w-full flex items-center justify-between p-3.5 rounded-xl border backdrop-blur-md transition-all duration-200 glass-card-hover ${theme.card}`}
@@ -332,7 +340,7 @@ export default function SmartProfileClient({
           {/* Carta Digital / Menú */}
           {profile.menuEnabled && profile.menuUrl && (
             <a
-              href={profile.menuUrl}
+              href={ensureHttpUrl(profile.menuUrl)}
               target="_blank"
               rel="noopener noreferrer"
               className={`w-full flex items-center justify-between p-3.5 rounded-xl border backdrop-blur-md transition-all duration-200 glass-card-hover ${theme.card}`}
@@ -374,7 +382,7 @@ export default function SmartProfileClient({
           {/* Website */}
           {profile.websiteEnabled && profile.websiteUrl && (
             <a
-              href={profile.websiteUrl}
+              href={ensureHttpUrl(profile.websiteUrl)}
               target="_blank"
               rel="noopener noreferrer"
               className={`w-full flex items-center justify-between p-3.5 rounded-xl border backdrop-blur-md transition-all duration-200 glass-card-hover ${theme.card}`}
@@ -385,7 +393,7 @@ export default function SmartProfileClient({
                 </div>
                 <div className="text-left">
                   <div className="font-semibold text-white text-sm">Página Web Oficial</div>
-                  <div className="text-xs text-slate-400">{profile.websiteUrl.replace(/^https?:\/\//, "")}</div>
+                  <div className="text-xs text-slate-400">{profile.websiteUrl.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</div>
                 </div>
               </div>
               <ExternalLink className="w-4 h-4 text-slate-400" />
@@ -395,7 +403,7 @@ export default function SmartProfileClient({
           {/* Google Maps */}
           {profile.googleMapsEnabled && profile.googleMapsUrl && (
             <a
-              href={profile.googleMapsUrl}
+              href={ensureHttpUrl(profile.googleMapsUrl)}
               target="_blank"
               rel="noopener noreferrer"
               className={`w-full flex items-center justify-between p-3.5 rounded-xl border backdrop-blur-md transition-all duration-200 glass-card-hover ${theme.card}`}
@@ -414,25 +422,28 @@ export default function SmartProfileClient({
           )}
 
           {/* Custom Links */}
-          {profile.customLinks.map((link) => (
-            <a
-              key={link.id}
-              href={link.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`w-full flex items-center justify-between p-3.5 rounded-xl border backdrop-blur-md transition-all duration-200 glass-card-hover ${theme.card}`}
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-lg bg-slate-800/80 text-white flex items-center justify-center border border-slate-700">
-                  {getCustomIcon(link.icon)}
+          {profile.customLinks.map((link) => {
+            const url = link.icon === "music" ? normalizeTiktokUrl(link.url) : ensureHttpUrl(link.url);
+            return (
+              <a
+                key={link.id}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`w-full flex items-center justify-between p-3.5 rounded-xl border backdrop-blur-md transition-all duration-200 glass-card-hover ${theme.card}`}
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-lg bg-slate-800/80 text-white flex items-center justify-center border border-slate-700">
+                    {getCustomIcon(link.icon)}
+                  </div>
+                  <div className="text-left">
+                    <div className="font-semibold text-white text-sm">{link.title}</div>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <div className="font-semibold text-white text-sm">{link.title}</div>
-                </div>
-              </div>
-              <ExternalLink className="w-4 h-4 text-slate-400" />
-            </a>
-          ))}
+                <ExternalLink className="w-4 h-4 text-slate-400" />
+              </a>
+            );
+          })}
         </div>
       </main>
 

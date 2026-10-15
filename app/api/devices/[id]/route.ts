@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { queryOne, execute, query } from "@/lib/db";
 import crypto from "crypto";
+import {
+  ensureHttpUrl,
+  normalizeInstagramUrl,
+  normalizeFacebookUrl,
+  normalizeTiktokUrl,
+} from "@/lib/utils";
 
 export async function GET(
   request: Request,
@@ -106,22 +112,34 @@ export async function PATCH(
       for (const ch of channels) {
         const val = (ch.value || "").trim();
         if (!val) continue;
-        if (ch.type === "google") googleReviewUrl = val;
-        else if (ch.type === "facebook") facebook = val;
-        else if (ch.type === "instagram") instagram = val;
-        else if (ch.type === "website") website = val;
+        if (ch.type === "google") googleReviewUrl = ensureHttpUrl(val);
+        else if (ch.type === "facebook") facebook = normalizeFacebookUrl(val);
+        else if (ch.type === "instagram") instagram = normalizeInstagramUrl(val);
+        else if (ch.type === "website") website = ensureHttpUrl(val);
         else if (ch.type === "whatsapp") whatsapp = val;
-        else if (ch.type === "menu") menuUrl = val;
-        else if (ch.type === "maps") googleMapsUrl = val;
-        else {
+        else if (ch.type === "menu") menuUrl = ensureHttpUrl(val);
+        else if (ch.type === "maps") googleMapsUrl = ensureHttpUrl(val);
+        else if (ch.type === "tiktok") {
+          customLinks.push({
+            id: ch.id,
+            type: ch.type,
+            title: ch.title || "TikTok",
+            value: normalizeTiktokUrl(val),
+          });
+        } else {
           customLinks.push({
             id: ch.id,
             type: ch.type,
             title: ch.title || "Enlace",
-            value: val,
+            value: ensureHttpUrl(val),
           });
         }
       }
+    } else {
+      if (googleReviewUrl) googleReviewUrl = ensureHttpUrl(googleReviewUrl);
+      if (facebook) facebook = normalizeFacebookUrl(facebook);
+      if (instagram) instagram = normalizeInstagramUrl(instagram);
+      if (website) website = ensureHttpUrl(website);
     }
 
     // 1. Actualizar negocio si se envió cambio de nombre o enlaces
@@ -165,16 +183,19 @@ export async function PATCH(
     }
 
     // 2. Determinar destino si es modo directo
-    let finalCustomDestination = customDestinationUrl;
+    let finalCustomDestination = customDestinationUrl ? ensureHttpUrl(customDestinationUrl) : null;
     if (mode === "DIRECT_REDIRECT" && !finalCustomDestination) {
-      if (googleReviewUrl) finalCustomDestination = googleReviewUrl;
-      else if (facebook) finalCustomDestination = facebook;
-      else if (instagram) finalCustomDestination = instagram.startsWith("http") ? instagram : `https://instagram.com/${instagram.replace("@", "")}`;
-      else if (website) finalCustomDestination = website;
-      else if (whatsapp) finalCustomDestination = `https://wa.me/${whatsapp.replace(/[^0-9]/g, "")}`;
-      else if (menuUrl) finalCustomDestination = menuUrl;
-      else if (googleMapsUrl) finalCustomDestination = googleMapsUrl;
-      else if (customLinks && customLinks.length > 0) finalCustomDestination = customLinks[0].value;
+      if (googleReviewUrl) finalCustomDestination = ensureHttpUrl(googleReviewUrl);
+      else if (facebook) finalCustomDestination = normalizeFacebookUrl(facebook);
+      else if (instagram) finalCustomDestination = normalizeInstagramUrl(instagram);
+      else if (website) finalCustomDestination = ensureHttpUrl(website);
+      else if (whatsapp) {
+        finalCustomDestination = whatsapp.startsWith("http")
+          ? whatsapp
+          : `https://wa.me/${whatsapp.replace(/[^0-9]/g, "")}`;
+      } else if (menuUrl) finalCustomDestination = ensureHttpUrl(menuUrl);
+      else if (googleMapsUrl) finalCustomDestination = ensureHttpUrl(googleMapsUrl);
+      else if (customLinks && customLinks.length > 0) finalCustomDestination = ensureHttpUrl(customLinks[0].value);
     }
 
     // 3. Actualizar configuración central de la placa
@@ -319,10 +340,11 @@ export async function PATCH(
           if (cl.value && cl.value.trim()) {
             const linkId = crypto.randomUUID();
             const icon = cl.type === "tiktok" ? "music" : "globe";
+            const val = cl.type === "tiktok" ? normalizeTiktokUrl(cl.value) : ensureHttpUrl(cl.value);
             await execute(
               `INSERT INTO smart_links (id, profileId, title, url, icon, \`order\`, isActive, createdAt, updatedAt)
                VALUES (?, ?, ?, ?, ?, ?, 1, NOW(3), NOW(3))`,
-              [linkId, targetProfileId, cl.title || "Enlace", cl.value.trim(), icon, i]
+              [linkId, targetProfileId, cl.title || "Enlace", val, icon, i]
             );
           }
         }

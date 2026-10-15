@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { query, queryOne, execute } from "@/lib/db";
 import crypto from "crypto";
+import { ensureHttpUrl, normalizeInstagramUrl, normalizeFacebookUrl } from "@/lib/utils";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -50,12 +51,12 @@ export async function POST(request: Request) {
         name.trim(),
         slug,
         category,
-        googleReviewUrl || null,
+        googleReviewUrl ? ensureHttpUrl(googleReviewUrl) : null,
         phone || null,
         whatsapp || null,
-        instagram || null,
-        facebook || null,
-        website || null,
+        instagram ? normalizeInstagramUrl(instagram) : null,
+        facebook ? normalizeFacebookUrl(facebook) : null,
+        website ? ensureHttpUrl(website) : null,
         address || null,
       ]
     );
