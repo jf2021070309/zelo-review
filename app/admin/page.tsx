@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { query, queryOne } from "@/lib/db";
 import Link from "next/link";
 import {
   Smartphone,
@@ -13,31 +13,57 @@ import {
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
+
 export default async function AdminOverviewPage() {
-  const totalDevices = await prisma.device.count();
-  const activeDevices = await prisma.device.count({ where: { status: "ACTIVE" } });
-  const readyDevices = await prisma.device.count({ where: { status: "READY_TO_ASSIGN" } });
-  const totalBusinesses = await prisma.business.count();
-  const totalScans = await prisma.scanEvent.count();
-  const qrScans = await prisma.scanEvent.count({ where: { source: "QR" } });
-  const nfcScans = await prisma.scanEvent.count({ where: { source: "NFC" } });
+  const counts = await queryOne<any>(`
+    SELECT
+      (SELECT COUNT(*) FROM devices) AS totalDevices,
+      (SELECT COUNT(*) FROM devices WHERE status = 'ACTIVE') AS activeDevices,
+      (SELECT COUNT(*) FROM devices WHERE status = 'READY_TO_ASSIGN') AS readyDevices,
+      (SELECT COUNT(*) FROM businesses) AS totalBusinesses,
+      (SELECT COUNT(*) FROM scan_events) AS totalScans,
+      (SELECT COUNT(*) FROM scan_events WHERE source = 'QR') AS qrScans,
+      (SELECT COUNT(*) FROM scan_events WHERE source = 'NFC') AS nfcScans
+  `);
 
-  const recentBatches = await prisma.batch.findMany({
-    include: {
-      _count: { select: { devices: true } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-  });
+  const totalDevices = Number(counts?.totalDevices || 0);
+  const activeDevices = Number(counts?.activeDevices || 0);
+  const readyDevices = Number(counts?.readyDevices || 0);
+  const totalBusinesses = Number(counts?.totalBusinesses || 0);
+  const totalScans = Number(counts?.totalScans || 0);
+  const qrScans = Number(counts?.qrScans || 0);
+  const nfcScans = Number(counts?.nfcScans || 0);
 
-  const recentBusinesses = await prisma.business.findMany({
-    include: {
-      user: true,
-      _count: { select: { devices: true } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-  });
+  const batchesRows = await query<any>(`
+    SELECT b.*, COUNT(d.id) AS deviceCount
+    FROM batches b
+    LEFT JOIN devices d ON d.batchId = b.id
+    GROUP BY b.id
+    ORDER BY b.createdAt DESC
+    LIMIT 5
+  `);
+
+  const recentBatches = batchesRows.map((b) => ({
+    ...b,
+    _count: { devices: Number(b.deviceCount || 0) },
+  }));
+
+  const businessesRows = await query<any>(`
+    SELECT b.*, u.email AS userEmail, COUNT(d.id) AS deviceCount
+    FROM businesses b
+    LEFT JOIN users u ON b.userId = u.id
+    LEFT JOIN devices d ON d.businessId = b.id
+    GROUP BY b.id, u.id
+    ORDER BY b.createdAt DESC
+    LIMIT 5
+  `);
+
+  const recentBusinesses = businessesRows.map((biz) => ({
+    ...biz,
+    user: { email: biz.userEmail || "admin@zelo.pe" },
+    _count: { devices: Number(biz.deviceCount || 0) },
+  }));
 
   return (
     <div className="space-y-8">
@@ -58,95 +84,99 @@ export default async function AdminOverviewPage() {
 
         <Link
           href="/admin/batches"
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-amber-500/20 transition"
+          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition"
         >
           <Printer className="w-4 h-4" />
-          <span>Generar Lote de Imprenta</span>
+          <span>Generar Lote de Producción</span>
         </Link>
       </div>
 
-      {/* Global KPIs */}
+      {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Devices */}
         <div className="glass-card p-5 rounded-2xl border border-slate-800 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Placas Producidas
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Placas Fabricadas
             </span>
-            <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center border border-amber-500/20">
-              <Smartphone className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+              <Smartphone className="w-4 h-4 text-indigo-400" />
             </div>
           </div>
-          <div className="space-y-1">
+          <div>
             <div className="text-3xl font-black text-white">{totalDevices}</div>
-            <div className="text-xs text-slate-400">
-              <span className="text-emerald-400 font-bold">{activeDevices} activas</span> •{" "}
-              <span className="text-amber-400">{readyDevices} listas para asignar</span>
-            </div>
+            <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+              <span className="text-emerald-400 font-semibold">{activeDevices} activas</span>
+              <span>•</span>
+              <span className="text-amber-400 font-semibold">{readyDevices} por asignar</span>
+            </p>
           </div>
         </div>
 
-        {/* Total Businesses */}
         <div className="glass-card p-5 rounded-2xl border border-slate-800 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Negocios Clientes
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Comercios Afiliados
             </span>
-            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20">
-              <Building2 className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+              <Building2 className="w-4 h-4 text-emerald-400" />
             </div>
           </div>
-          <div className="space-y-1">
+          <div>
             <div className="text-3xl font-black text-white">{totalBusinesses}</div>
-            <div className="text-xs text-indigo-400 font-medium">Empresas registradas</div>
+            <p className="text-xs text-slate-400 mt-1">
+              Negocios administrando placas
+            </p>
           </div>
         </div>
 
-        {/* Global Scans */}
         <div className="glass-card p-5 rounded-2xl border border-slate-800 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Escaneos Globales
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Impactos Totales
             </span>
-            <div className="w-9 h-9 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center border border-cyan-500/20">
-              <Eye className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+              <Eye className="w-4 h-4 text-amber-400" />
             </div>
           </div>
-          <div className="space-y-1">
+          <div>
             <div className="text-3xl font-black text-white">{totalScans}</div>
-            <div className="text-xs text-slate-400">
-              📷 QR: {qrScans} • 📱 NFC: {nfcScans}
-            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Escaneos y toques registrados
+            </p>
           </div>
         </div>
 
-        {/* QR vs NFC Ratio */}
         <div className="glass-card p-5 rounded-2xl border border-slate-800 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Efectividad NFC
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Canal Dominante
             </span>
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/20">
-              <TrendingUp className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
+              <TrendingUp className="w-4 h-4 text-purple-400" />
             </div>
           </div>
-          <div className="space-y-1">
-            <div className="text-3xl font-black text-emerald-400">
-              {totalScans > 0 ? Math.round((nfcScans / totalScans) * 100) : 0}%
+          <div>
+            <div className="text-2xl font-black text-white flex items-baseline gap-2">
+              <span>{qrScans >= nfcScans ? "QR" : "NFC"}</span>
+              <span className="text-xs text-slate-400 font-normal">
+                ({qrScans} QR vs {nfcScans} NFC)
+              </span>
             </div>
-            <div className="text-xs text-slate-400">Toques por chip de proximidad</div>
+            <p className="text-xs text-slate-400 mt-1">
+              Desglose de tecnología usada
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Tables Row: Recent Batches & Recent Businesses */}
+      {/* Two Column Layout: Batches & Businesses */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Batches for Printing */}
+        {/* Recent Batches */}
         <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <h2 className="text-base font-bold text-white">Lotes de Imprenta Recientes</h2>
-              <p className="text-xs text-slate-400">Archivos para corte láser y RIP UV</p>
+              <h2 className="text-base font-bold text-white">Últimos Lotes Creados</h2>
+              <p className="text-xs text-slate-400">Archivos para corte láser e imprenta UV</p>
             </div>
             <Link
               href="/admin/batches"

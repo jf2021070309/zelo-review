@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🚀 Ejecutar Git Pull, Prisma Migrations y Build en VPS vía SSH
+      - name: 🚀 Desplegar cambios en VPS vía SSH (MySQL Nativo)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: "2.25.102.198"
@@ -21,15 +21,16 @@ jobs:
             git config --global --add safe.directory /var/www/zelo-review
             cd /var/www/zelo-review
             
-            echo "📥 Obteniendo últimos cambios del repositorio..."
+            echo "📥 Limpiando y obteniendo últimos cambios del repositorio..."
+            git reset --hard HEAD || true
+            git checkout main || git checkout master || true
             git pull origin main || git pull origin master
 
-            echo "📦 Instalando dependencias..."
+            echo "📦 Instalando dependencias (mysql2)..."
             npm install --legacy-peer-deps
 
-            echo "🗄️ Generando cliente Prisma y sincronizando base de datos..."
-            npx prisma generate
-            npx prisma db push
+            echo "🗄️ Sincronizando base de datos MariaDB / MySQL..."
+            mariadb < schema_mysql.sql 2>/dev/null || mysql < schema_mysql.sql 2>/dev/null || true
 
             echo "🏗️ Compilando aplicación Next.js en producción..."
             npm run build
@@ -45,4 +46,4 @@ jobs:
             echo "🌐 Recargando servidor web Nginx / Caddy..."
             systemctl reload nginx 2>/dev/null || true
 
-            echo "✨ ¡ZELO Review desplegado exitosamente en producción!"
+            echo "✨ ¡ZELO Review desplegado exitosamente con MySQL sin Prisma!"

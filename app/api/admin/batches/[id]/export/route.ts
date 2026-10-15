@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { queryOne, query } from "@/lib/db";
 import { createBatchPrintZip, BatchExportItem } from "@/lib/qr";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(
   request: NextRequest,
@@ -13,23 +15,23 @@ export async function GET(
       return new NextResponse("No autorizado", { status: 403 });
     }
 
-    const batch = await prisma.batch.findUnique({
-      where: { id: params.id },
-      include: {
-        devices: {
-          orderBy: { code: "asc" },
-        },
-      },
-    });
+    const batch = await queryOne<any>(
+      "SELECT * FROM batches WHERE id = ? LIMIT 1",
+      [params.id]
+    );
 
     if (!batch) {
       return new NextResponse("Lote no encontrado", { status: 404 });
     }
 
-    // Determine host for URLs
-    const host = request.nextUrl.origin || "https://zelo.pe";
+    const devices = await query<any>(
+      "SELECT code, activationPin FROM devices WHERE batchId = ? ORDER BY code ASC",
+      [batch.id]
+    );
 
-    const exportItems: BatchExportItem[] = batch.devices.map((device) => ({
+    const host = request.nextUrl.origin || "https://review.zelo.com.mx";
+
+    const exportItems: BatchExportItem[] = devices.map((device) => ({
       code: device.code,
       pin: device.activationPin,
       qrUrl: `${host}/r/${device.code}?src=qr`,

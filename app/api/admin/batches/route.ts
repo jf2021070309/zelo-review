@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { query, queryOne, execute } from "@/lib/db";
 import { generateRandomCode, generatePin } from "@/lib/utils";
+import crypto from "crypto";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -9,14 +10,18 @@ export async function GET() {
     return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
   }
 
-  const batches = await prisma.batch.findMany({
-    include: {
-      _count: {
-        select: { devices: true },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const batchesRows = await query<any>(`
+    SELECT b.*, COUNT(d.id) AS deviceCount
+    FROM batches b
+    LEFT JOIN devices d ON d.batchId = b.id
+    GROUP BY b.id
+    ORDER BY b.createdAt DESC
+  `);
+
+  const batches = batchesRows.map((b) => ({
+    ...b,
+    _count: { devices: Number(b.deviceCount || 0) },
+  }));
 
   return NextResponse.json({ batches });
 }
@@ -39,18 +44,14 @@ export async function POST(request: Request) {
     }
 
     const cleanPrefix = (prefix || "ZL").toUpperCase().trim();
+    const batchId = crypto.randomUUID();
 
-    // Create batch and generate unique plates
-    const batch = await prisma.batch.create({
-      data: {
-        name,
-        quantity: count,
-        prefix: cleanPrefix,
-        notes: notes || undefined,
-      },
-    });
+    await execute(
+      `INSERT INTO batches (id, name, quantity, prefix, notes, createdAt)
+       VALUES (?, ?, ?, ?, ?, NOW(3))`,
+      [batchId, name, count, cleanPrefix, notes || null]
+    );
 
-    const devicesData = [];
     const usedCodes = new Set<string>();
 
     for (let i = 0; i < count; i++) {
@@ -61,25 +62,21 @@ export async function POST(request: Request) {
       usedCodes.add(code);
 
       const pin = generatePin(4);
+      const devId = crypto.randomUUID();
 
-      devicesData.push({
-        code,
-        activationPin: pin,
-        status: "READY_TO_ASSIGN" as const,
-        mode: "DIRECT_REDIRECT" as const,
-        batchId: batch.id,
-      });
+      await execute(
+        `INSERT INTO devices (id, code, activationPin, status, mode, batchId, createdAt, updatedAt)
+         VALUES (?, ?, ?, 'READY_TO_ASSIGN', 'DIRECT_REDIRECT', ?, NOW(3), NOW(3))`,
+        [devId, code, pin, batchId]
+      );
     }
 
-    await prisma.device.createMany({
-      data: devicesData,
-      skipDuplicates: true,
-    });
+    const batch = await queryOne("SELECT * FROM batches WHERE id = ? LIMIT 1", [batchId]);
 
     return NextResponse.json({
       success: true,
       batch,
-      generatedCount: devicesData.length,
+      generatedCount: count,
     });
   } catch (error) {
     console.error("Batch creation error:", error);

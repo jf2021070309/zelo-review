@@ -26,7 +26,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- 1. TABLA: users
 -- ----------------------------------------------------------------------------
 CREATE TABLE `users` (
-  `id` VARCHAR(36) NOT NULL,
+  `id` VARCHAR(64) NOT NULL,
   `email` VARCHAR(191) NOT NULL,
   `password` VARCHAR(255) NOT NULL,
   `name` VARCHAR(191) NOT NULL,
@@ -41,8 +41,8 @@ CREATE TABLE `users` (
 -- 2. TABLA: businesses
 -- ----------------------------------------------------------------------------
 CREATE TABLE `businesses` (
-  `id` VARCHAR(36) NOT NULL,
-  `userId` VARCHAR(36) NOT NULL,
+  `id` VARCHAR(64) NOT NULL,
+  `userId` VARCHAR(64) NOT NULL,
   `name` VARCHAR(191) NOT NULL,
   `slug` VARCHAR(191) NOT NULL,
   `logoUrl` TEXT NULL,
@@ -67,7 +67,7 @@ CREATE TABLE `businesses` (
 -- 3. TABLA: batches (Lotes de producción física de placas)
 -- ----------------------------------------------------------------------------
 CREATE TABLE `batches` (
-  `id` VARCHAR(36) NOT NULL,
+  `id` VARCHAR(64) NOT NULL,
   `name` VARCHAR(191) NOT NULL,
   `quantity` INT NOT NULL,
   `prefix` VARCHAR(10) NOT NULL DEFAULT 'ZL',
@@ -80,14 +80,14 @@ CREATE TABLE `batches` (
 -- 4. TABLA: devices (Placas acrílicas con QR + chip NFC)
 -- ----------------------------------------------------------------------------
 CREATE TABLE `devices` (
-  `id` VARCHAR(36) NOT NULL,
+  `id` VARCHAR(64) NOT NULL,
   `code` VARCHAR(50) NOT NULL,
   `activationPin` VARCHAR(20) NOT NULL,
   `status` ENUM('IN_PRODUCTION', 'READY_TO_ASSIGN', 'ACTIVE', 'SUSPENDED') NOT NULL DEFAULT 'READY_TO_ASSIGN',
   `mode` ENUM('DIRECT_REDIRECT', 'SMART_PROFILE') NOT NULL DEFAULT 'DIRECT_REDIRECT',
   `customDestinationUrl` TEXT NULL,
-  `businessId` VARCHAR(36) NULL,
-  `batchId` VARCHAR(36) NULL,
+  `businessId` VARCHAR(64) NULL,
+  `batchId` VARCHAR(64) NULL,
   `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`id`),
@@ -102,8 +102,8 @@ CREATE TABLE `devices` (
 -- 5. TABLA: smart_profiles (Hub interactivo bio-link para placas SMART_PROFILE)
 -- ----------------------------------------------------------------------------
 CREATE TABLE `smart_profiles` (
-  `id` VARCHAR(36) NOT NULL,
-  `deviceId` VARCHAR(36) NOT NULL,
+  `id` VARCHAR(64) NOT NULL,
+  `deviceId` VARCHAR(64) NOT NULL,
   `title` VARCHAR(191) NULL,
   `description` TEXT NULL,
   `theme` VARCHAR(50) NOT NULL DEFAULT 'dark_gold',
@@ -136,8 +136,8 @@ CREATE TABLE `smart_profiles` (
 -- 6. TABLA: smart_links (Enlaces personalizados dentro de un smart profile)
 -- ----------------------------------------------------------------------------
 CREATE TABLE `smart_links` (
-  `id` VARCHAR(36) NOT NULL,
-  `profileId` VARCHAR(36) NOT NULL,
+  `id` VARCHAR(64) NOT NULL,
+  `profileId` VARCHAR(64) NOT NULL,
   `title` VARCHAR(191) NOT NULL,
   `url` TEXT NOT NULL,
   `icon` VARCHAR(50) NOT NULL DEFAULT 'globe',
@@ -154,8 +154,8 @@ CREATE TABLE `smart_links` (
 -- 7. TABLA: scan_events (Registro de métricas QR vs NFC en tiempo real)
 -- ----------------------------------------------------------------------------
 CREATE TABLE `scan_events` (
-  `id` VARCHAR(36) NOT NULL,
-  `deviceId` VARCHAR(36) NOT NULL,
+  `id` VARCHAR(64) NOT NULL,
+  `deviceId` VARCHAR(64) NOT NULL,
   `source` ENUM('QR', 'NFC', 'DIRECT', 'UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
   `ipHash` VARCHAR(191) NULL,
   `userAgent` TEXT NULL,
