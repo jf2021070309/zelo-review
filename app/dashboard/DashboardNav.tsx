@@ -4,12 +4,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
-  QrCode,
-  Settings,
   LogOut,
   Sparkles,
   ShieldCheck,
-  Printer,
   MapPin,
 } from "lucide-react";
 
@@ -20,7 +17,7 @@ interface Props {
     email: string;
     role: string;
   };
-  business: {
+  business?: {
     id: string;
     name: string;
     slug: string;
@@ -52,21 +49,6 @@ export default function DashboardNav({ user }: Props) {
       label: "Generador Google Reviews",
       href: "/dashboard/google-reviews",
       icon: MapPin,
-    },
-    {
-      label: "Estudio & Descarga QR",
-      href: "/dashboard/qr",
-      icon: QrCode,
-    },
-    {
-      label: "Lotes de Fabricación UV",
-      href: "/admin/batches",
-      icon: Printer,
-    },
-    {
-      label: "Ajustes de Perfil",
-      href: "/dashboard/settings",
-      icon: Settings,
     },
   ];
 
