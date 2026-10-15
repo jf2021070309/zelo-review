@@ -45,11 +45,6 @@ export default function DashboardNav({ user }: Props) {
       href: "/dashboard",
       icon: LayoutDashboard,
     },
-    {
-      label: "Generador Google Reviews",
-      href: "/dashboard/google-reviews",
-      icon: MapPin,
-    },
   ];
 
   return (

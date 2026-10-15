@@ -74,13 +74,55 @@ export async function PATCH(
       customDestinationUrl,
       status,
       businessName,
-      googleReviewUrl,
-      facebook,
-      instagram,
-      website,
-      whatsapp,
+      channels,
+      googleReviewUrl: rawGoogle,
+      facebook: rawFacebook,
+      instagram: rawInstagram,
+      website: rawWebsite,
+      whatsapp: rawWhatsapp,
       smartProfile,
     } = data;
+
+    // Extraer canales si vienen en payload
+    let googleReviewUrl = rawGoogle;
+    let facebook = rawFacebook;
+    let instagram = rawInstagram;
+    let website = rawWebsite;
+    let whatsapp = rawWhatsapp;
+    let menuUrl: string | undefined = undefined;
+    let googleMapsUrl: string | undefined = undefined;
+    let customLinks: Array<{ id: string; type: string; title: string; value: string }> | null = null;
+
+    if (Array.isArray(channels)) {
+      customLinks = [];
+      googleReviewUrl = "";
+      facebook = "";
+      instagram = "";
+      website = "";
+      whatsapp = "";
+      menuUrl = "";
+      googleMapsUrl = "";
+
+      for (const ch of channels) {
+        const val = (ch.value || "").trim();
+        if (!val) continue;
+        if (ch.type === "google") googleReviewUrl = val;
+        else if (ch.type === "facebook") facebook = val;
+        else if (ch.type === "instagram") instagram = val;
+        else if (ch.type === "website") website = val;
+        else if (ch.type === "whatsapp") whatsapp = val;
+        else if (ch.type === "menu") menuUrl = val;
+        else if (ch.type === "maps") googleMapsUrl = val;
+        else {
+          customLinks.push({
+            id: ch.id,
+            type: ch.type,
+            title: ch.title || "Enlace",
+            value: val,
+          });
+        }
+      }
+    }
 
     // 1. Actualizar negocio si se envió cambio de nombre o enlaces
     if (device.businessId) {
@@ -93,23 +135,23 @@ export async function PATCH(
       }
       if (googleReviewUrl !== undefined) {
         updates.push("googleReviewUrl = ?");
-        values.push(googleReviewUrl);
+        values.push(googleReviewUrl || null);
       }
       if (facebook !== undefined) {
         updates.push("facebook = ?");
-        values.push(facebook);
+        values.push(facebook || null);
       }
       if (instagram !== undefined) {
         updates.push("instagram = ?");
-        values.push(instagram);
+        values.push(instagram || null);
       }
       if (website !== undefined) {
         updates.push("website = ?");
-        values.push(website);
+        values.push(website || null);
       }
       if (whatsapp !== undefined) {
         updates.push("whatsapp = ?");
-        values.push(whatsapp);
+        values.push(whatsapp || null);
       }
 
       if (updates.length > 0) {
@@ -122,7 +164,20 @@ export async function PATCH(
       }
     }
 
-    // 2. Actualizar configuración central de la placa
+    // 2. Determinar destino si es modo directo
+    let finalCustomDestination = customDestinationUrl;
+    if (mode === "DIRECT_REDIRECT" && !finalCustomDestination) {
+      if (googleReviewUrl) finalCustomDestination = googleReviewUrl;
+      else if (facebook) finalCustomDestination = facebook;
+      else if (instagram) finalCustomDestination = instagram.startsWith("http") ? instagram : `https://instagram.com/${instagram.replace("@", "")}`;
+      else if (website) finalCustomDestination = website;
+      else if (whatsapp) finalCustomDestination = `https://wa.me/${whatsapp.replace(/[^0-9]/g, "")}`;
+      else if (menuUrl) finalCustomDestination = menuUrl;
+      else if (googleMapsUrl) finalCustomDestination = googleMapsUrl;
+      else if (customLinks && customLinks.length > 0) finalCustomDestination = customLinks[0].value;
+    }
+
+    // 3. Actualizar configuración central de la placa
     const deviceUpdates: string[] = [];
     const deviceValues: any[] = [];
 
@@ -130,9 +185,9 @@ export async function PATCH(
       deviceUpdates.push("mode = ?");
       deviceValues.push(mode);
     }
-    if (customDestinationUrl !== undefined) {
+    if (finalCustomDestination !== undefined) {
       deviceUpdates.push("customDestinationUrl = ?");
-      deviceValues.push(customDestinationUrl);
+      deviceValues.push(finalCustomDestination || null);
     }
     if (status) {
       deviceUpdates.push("status = ?");
@@ -148,8 +203,19 @@ export async function PATCH(
       );
     }
 
-    // 3. Upsert / Actualizar SmartProfile
-    if (smartProfile || businessName || facebook !== undefined || instagram !== undefined || website !== undefined || whatsapp !== undefined || googleReviewUrl !== undefined) {
+    // 4. Upsert / Actualizar SmartProfile
+    if (
+      smartProfile ||
+      businessName ||
+      facebook !== undefined ||
+      instagram !== undefined ||
+      website !== undefined ||
+      whatsapp !== undefined ||
+      googleReviewUrl !== undefined ||
+      menuUrl !== undefined ||
+      googleMapsUrl !== undefined ||
+      customLinks !== null
+    ) {
       const existingProfile = await queryOne<any>(
         "SELECT id FROM smart_profiles WHERE deviceId = ? LIMIT 1",
         [params.id]
@@ -162,6 +228,10 @@ export async function PATCH(
       const ig = spData.instagramHandle !== undefined ? spData.instagramHandle : instagram;
       const web = spData.websiteUrl !== undefined ? spData.websiteUrl : website;
       const wa = spData.whatsappNumber !== undefined ? spData.whatsappNumber : whatsapp;
+      const mUrl = spData.menuUrl !== undefined ? spData.menuUrl : menuUrl;
+      const mapsUrl = spData.googleMapsUrl !== undefined ? spData.googleMapsUrl : googleMapsUrl;
+
+      let targetProfileId = existingProfile?.id;
 
       if (existingProfile) {
         await execute(
@@ -178,26 +248,34 @@ export async function PATCH(
             instagramEnabled = COALESCE(?, instagramEnabled),
             websiteUrl = COALESCE(?, websiteUrl),
             websiteEnabled = COALESCE(?, websiteEnabled),
+            menuUrl = COALESCE(?, menuUrl),
+            menuEnabled = COALESCE(?, menuEnabled),
+            googleMapsUrl = COALESCE(?, googleMapsUrl),
+            googleMapsEnabled = COALESCE(?, googleMapsEnabled),
             updatedAt = NOW(3)
           WHERE id = ?`,
           [
             title || null,
             spData.description ?? null,
-            gReview || null,
-            spData.googleReviewEnabled !== undefined ? (spData.googleReviewEnabled ? 1 : 0) : null,
-            fb || null,
-            spData.facebookEnabled !== undefined ? (spData.facebookEnabled ? 1 : 0) : (fb ? 1 : null),
-            wa || null,
-            spData.whatsappEnabled !== undefined ? (spData.whatsappEnabled ? 1 : 0) : (wa ? 1 : null),
-            ig || null,
-            spData.instagramEnabled !== undefined ? (spData.instagramEnabled ? 1 : 0) : (ig ? 1 : null),
-            web || null,
-            spData.websiteEnabled !== undefined ? (spData.websiteEnabled ? 1 : 0) : (web ? 1 : null),
+            gReview !== undefined ? (gReview || null) : null,
+            gReview !== undefined ? (gReview ? 1 : 0) : null,
+            fb !== undefined ? (fb || null) : null,
+            fb !== undefined ? (fb ? 1 : 0) : null,
+            wa !== undefined ? (wa || null) : null,
+            wa !== undefined ? (wa ? 1 : 0) : null,
+            ig !== undefined ? (ig || null) : null,
+            ig !== undefined ? (ig ? 1 : 0) : null,
+            web !== undefined ? (web || null) : null,
+            web !== undefined ? (web ? 1 : 0) : null,
+            mUrl !== undefined ? (mUrl || null) : null,
+            mUrl !== undefined ? (mUrl ? 1 : 0) : null,
+            mapsUrl !== undefined ? (mapsUrl || null) : null,
+            mapsUrl !== undefined ? (mapsUrl ? 1 : 0) : null,
             existingProfile.id,
           ]
         );
       } else {
-        const newSpId = crypto.randomUUID();
+        targetProfileId = crypto.randomUUID();
         await execute(
           `INSERT INTO smart_profiles (
             id, deviceId, title, description, theme,
@@ -206,14 +284,17 @@ export async function PATCH(
             whatsappNumber, whatsappEnabled,
             instagramHandle, instagramEnabled,
             websiteUrl, websiteEnabled,
+            menuUrl, menuEnabled,
+            googleMapsUrl, googleMapsEnabled,
             createdAt, updatedAt
-          ) VALUES (?, ?, ?, ?, 'dark_gold', ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
+          ) VALUES (?, ?, ?, ?, 'dark_gold', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
           [
-            newSpId,
+            targetProfileId,
             params.id,
             title || "Mi Negocio",
             spData.description || "¡Gracias por visitarnos!",
             gReview || null,
+            gReview ? 1 : 0,
             fb || null,
             fb ? 1 : 0,
             wa || null,
@@ -222,8 +303,29 @@ export async function PATCH(
             ig ? 1 : 0,
             web || null,
             web ? 1 : 0,
+            mUrl || null,
+            mUrl ? 1 : 0,
+            mapsUrl || null,
+            mapsUrl ? 1 : 0,
           ]
         );
+      }
+
+      // Actualizar smart_links si se enviaron customLinks
+      if (customLinks !== null && targetProfileId) {
+        await execute("DELETE FROM smart_links WHERE profileId = ?", [targetProfileId]);
+        for (let i = 0; i < customLinks.length; i++) {
+          const cl = customLinks[i];
+          if (cl.value && cl.value.trim()) {
+            const linkId = crypto.randomUUID();
+            const icon = cl.type === "tiktok" ? "music" : "globe";
+            await execute(
+              `INSERT INTO smart_links (id, profileId, title, url, icon, \`order\`, isActive, createdAt, updatedAt)
+               VALUES (?, ?, ?, ?, ?, ?, 1, NOW(3), NOW(3))`,
+              [linkId, targetProfileId, cl.title || "Enlace", cl.value.trim(), icon, i]
+            );
+          }
+        }
       }
     }
 

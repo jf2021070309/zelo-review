@@ -28,7 +28,99 @@ import {
   Building2,
   Lock,
   MapPin,
+  Utensils,
+  Music,
 } from "lucide-react";
+
+export type PlateChannelType =
+  | "google"
+  | "facebook"
+  | "instagram"
+  | "whatsapp"
+  | "website"
+  | "tiktok"
+  | "maps"
+  | "menu"
+  | "custom";
+
+export interface PlateChannel {
+  id: string;
+  type: PlateChannelType;
+  title: string;
+  value: string;
+}
+
+export const AVAILABLE_CHANNEL_TYPES: Array<{
+  type: PlateChannelType;
+  label: string;
+  iconName: string;
+  defaultTitle: string;
+  placeholder: string;
+}> = [
+  {
+    type: "google",
+    label: "⭐ Enlace Google Reviews (5 Estrellas)",
+    iconName: "star",
+    defaultTitle: "Google Reviews",
+    placeholder: "https://search.google.com/local/writereview?placeid=...",
+  },
+  {
+    type: "facebook",
+    label: "📘 Facebook",
+    iconName: "facebook",
+    defaultTitle: "Facebook",
+    placeholder: "https://facebook.com/tunegocio",
+  },
+  {
+    type: "instagram",
+    label: "📸 Instagram",
+    iconName: "instagram",
+    defaultTitle: "Instagram",
+    placeholder: "@tunegocio o https://instagram.com/tunegocio",
+  },
+  {
+    type: "whatsapp",
+    label: "💬 WhatsApp",
+    iconName: "whatsapp",
+    defaultTitle: "WhatsApp",
+    placeholder: "Ej: +51 987654321",
+  },
+  {
+    type: "website",
+    label: "🌐 Página Web Oficial",
+    iconName: "globe",
+    defaultTitle: "Página Web Oficial",
+    placeholder: "https://tunegocio.com",
+  },
+  {
+    type: "tiktok",
+    label: "🎵 TikTok",
+    iconName: "tiktok",
+    defaultTitle: "TikTok",
+    placeholder: "@tunegocio o https://tiktok.com/@tunegocio",
+  },
+  {
+    type: "maps",
+    label: "📍 Google Maps (Ubicación)",
+    iconName: "maps",
+    defaultTitle: "Google Maps",
+    placeholder: "https://maps.google.com/?cid=... o link de Maps",
+  },
+  {
+    type: "menu",
+    label: "🍽️ Menú / Carta Digital",
+    iconName: "menu",
+    defaultTitle: "Menú / Carta Digital",
+    placeholder: "https://menu.tunegocio.com o enlace a PDF",
+  },
+  {
+    type: "custom",
+    label: "➕ Nueva Categoría Personalizada...",
+    iconName: "custom",
+    defaultTitle: "Categoría Personalizada",
+    placeholder: "https://...",
+  },
+];
 
 interface SmartProfile {
   id: string;
@@ -44,6 +136,17 @@ interface SmartProfile {
   websiteEnabled: boolean;
   whatsappNumber?: string | null;
   whatsappEnabled: boolean;
+  menuUrl?: string | null;
+  menuEnabled?: boolean;
+  googleMapsUrl?: string | null;
+  googleMapsEnabled?: boolean;
+  customLinks?: Array<{
+    id: string;
+    profileId?: string;
+    title: string;
+    url: string;
+    icon: string;
+  }>;
 }
 
 interface Business {
@@ -106,14 +209,24 @@ export default function DashboardCrudClient({
   // Campos Form Crear / Generar
   const [businessSelection, setBusinessSelection] = useState<string>("new"); // "new" o business.id
   const [formBusinessName, setFormBusinessName] = useState("");
-  const [formWebsite, setFormWebsite] = useState("");
-  const [formFacebook, setFormFacebook] = useState("");
-  const [formInstagram, setFormInstagram] = useState("");
-  const [formWhatsapp, setFormWhatsapp] = useState("");
-  const [formGoogleReviews, setFormGoogleReviews] = useState("");
-  const [formMode, setFormMode] = useState<"DIRECT_REDIRECT" | "SMART_PROFILE">("SMART_PROFILE");
+  
+  // Canales Dinámicos en Crear (Por defecto SOLO Google Reviews)
+  const [createChannels, setCreateChannels] = useState<PlateChannel[]>([
+    {
+      id: "google",
+      type: "google",
+      title: "Google Reviews",
+      value: "",
+    },
+  ]);
+  const [formMode, setFormMode] = useState<"DIRECT_REDIRECT" | "SMART_PROFILE">("DIRECT_REDIRECT");
   const [formStaticDestination, setFormStaticDestination] = useState<string>("google");
   const [formCustomUrl, setFormCustomUrl] = useState("");
+
+  // Helper Place ID en Modal Crear
+  const [showPlaceIdHelper, setShowPlaceIdHelper] = useState(false);
+  const [inlinePlaceId, setInlinePlaceId] = useState("");
+  const [placeIdMessage, setPlaceIdMessage] = useState<string | null>(null);
 
   // Estado Modal Éxito / Ver QR Generado
   const [createdDeviceResult, setCreatedDeviceResult] = useState<{
@@ -130,13 +243,12 @@ export default function DashboardCrudClient({
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [editBusinessName, setEditBusinessName] = useState("");
-  const [editWebsite, setEditWebsite] = useState("");
-  const [editFacebook, setEditFacebook] = useState("");
-  const [editInstagram, setEditInstagram] = useState("");
-  const [editWhatsapp, setEditWhatsapp] = useState("");
-  const [editGoogleReviews, setEditGoogleReviews] = useState("");
-  const [editMode, setEditMode] = useState<"DIRECT_REDIRECT" | "SMART_PROFILE">("SMART_PROFILE");
+  const [editChannels, setEditChannels] = useState<PlateChannel[]>([]);
+  const [editMode, setEditMode] = useState<"DIRECT_REDIRECT" | "SMART_PROFILE">("DIRECT_REDIRECT");
   const [editCustomUrl, setEditCustomUrl] = useState("");
+  const [showEditPlaceIdHelper, setShowEditPlaceIdHelper] = useState(false);
+  const [inlineEditPlaceId, setInlineEditPlaceId] = useState("");
+  const [editPlaceIdMessage, setEditPlaceIdMessage] = useState<string | null>(null);
 
   // Estado Modal Ver / Descargar QR
   const [qrModalDevice, setQrModalDevice] = useState<Device | null>(null);
@@ -145,51 +257,122 @@ export default function DashboardCrudClient({
   const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  // Helper Place ID en Modal Crear
-  const [showPlaceIdHelper, setShowPlaceIdHelper] = useState(false);
-  const [inlinePlaceId, setInlinePlaceId] = useState("");
+  // Gestión dinámica de canales (Create y Edit)
+  const handleAddChannel = (target: "create" | "edit", type: PlateChannelType) => {
+    const cat = AVAILABLE_CHANNEL_TYPES.find((c) => c.type === type);
+    const newCh: PlateChannel = {
+      id: type === "custom" ? `custom_${Date.now()}` : type,
+      type,
+      title: cat ? cat.defaultTitle : "Nueva Categoría",
+      value: "",
+    };
 
-  // Helper Place ID en Modal Editar
-  const [showEditPlaceIdHelper, setShowEditPlaceIdHelper] = useState(false);
-  const [inlineEditPlaceId, setInlineEditPlaceId] = useState("");
-
-  // Abrir modal de creación automáticamente si viene de la herramienta Google Reviews
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("newPlate") === "1") {
-        setShowCreateModal(true);
-        const gUrl = params.get("googleUrl");
-        if (gUrl) {
-          setFormGoogleReviews(decodeURIComponent(gUrl));
+    if (target === "create") {
+      setCreateChannels((prev) => {
+        const next = [...prev, newCh];
+        if (next.length > 1) {
+          setFormMode("SMART_PROFILE");
         }
-        const bName = params.get("businessName");
-        if (bName) {
-          setFormBusinessName(decodeURIComponent(bName));
-          setBusinessSelection("new");
+        return next;
+      });
+    } else {
+      setEditChannels((prev) => {
+        const next = [...prev, newCh];
+        if (next.length > 1) {
+          setEditMode("SMART_PROFILE");
         }
-      }
+        return next;
+      });
     }
-  }, []);
-
-  const applyInlinePlaceId = () => {
-    const raw = inlinePlaceId.trim();
-    if (!raw) return;
-    const match = raw.match(/[?&]place(?:_)?id=([A-Za-z0-9_-]+)/i);
-    const id = match && match[1] ? match[1] : raw;
-    setFormGoogleReviews(`https://search.google.com/local/writereview?placeid=${id}`);
-    setShowPlaceIdHelper(false);
-    setInlinePlaceId("");
   };
 
-  const applyInlineEditPlaceId = () => {
-    const raw = inlineEditPlaceId.trim();
+  const handleRemoveChannel = (target: "create" | "edit", id: string) => {
+    if (target === "create") {
+      setCreateChannels((prev) => {
+        const next = prev.filter((c) => c.id !== id);
+        if (next.length === 1) {
+          setFormMode("DIRECT_REDIRECT");
+        }
+        return next;
+      });
+    } else {
+      setEditChannels((prev) => {
+        const next = prev.filter((c) => c.id !== id);
+        if (next.length === 1) {
+          setEditMode("DIRECT_REDIRECT");
+        }
+        return next;
+      });
+    }
+  };
+
+  const handleChannelValueChange = (target: "create" | "edit", id: string, val: string) => {
+    if (target === "create") {
+      setCreateChannels((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, value: val } : c))
+      );
+    } else {
+      setEditChannels((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, value: val } : c))
+      );
+    }
+  };
+
+  const handleChannelTitleChange = (target: "create" | "edit", id: string, title: string) => {
+    if (target === "create") {
+      setCreateChannels((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, title } : c))
+      );
+    } else {
+      setEditChannels((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, title } : c))
+      );
+    }
+  };
+
+  // Convertidor de Google Place ID
+  const applyInlinePlaceId = (target: "create" | "edit", customId?: string) => {
+    const raw = (customId ?? (target === "create" ? inlinePlaceId : inlineEditPlaceId)).trim();
     if (!raw) return;
+
+    let cleanId = raw;
     const match = raw.match(/[?&]place(?:_)?id=([A-Za-z0-9_-]+)/i);
-    const id = match && match[1] ? match[1] : raw;
-    setEditGoogleReviews(`https://search.google.com/local/writereview?placeid=${id}`);
-    setShowEditPlaceIdHelper(false);
-    setInlineEditPlaceId("");
+    if (match && match[1]) {
+      cleanId = match[1];
+    } else if (raw.includes("google.com/maps/place/")) {
+      const afterPlace = raw.split("/place/")[1]?.split("/")[0] || raw;
+      cleanId = afterPlace.replace(/[^A-Za-z0-9_-]/g, "");
+    }
+
+    const generatedUrl = `https://search.google.com/local/writereview?placeid=${cleanId}`;
+
+    if (target === "create") {
+      setCreateChannels((prev) => {
+        const idx = prev.findIndex((c) => c.type === "google");
+        if (idx !== -1) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], value: generatedUrl };
+          return next;
+        }
+        return [{ id: "google", type: "google", title: "Google Reviews", value: generatedUrl }, ...prev];
+      });
+      setPlaceIdMessage("¡Enlace oficial de 5 estrellas generado con éxito!");
+      setTimeout(() => setPlaceIdMessage(null), 3500);
+      setInlinePlaceId("");
+    } else {
+      setEditChannels((prev) => {
+        const idx = prev.findIndex((c) => c.type === "google");
+        if (idx !== -1) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], value: generatedUrl };
+          return next;
+        }
+        return [{ id: "google", type: "google", title: "Google Reviews", value: generatedUrl }, ...prev];
+      });
+      setEditPlaceIdMessage("¡Enlace oficial de 5 estrellas generado con éxito!");
+      setTimeout(() => setEditPlaceIdMessage(null), 3500);
+      setInlineEditPlaceId("");
+    }
   };
 
   // Copiado temporal
@@ -216,20 +399,31 @@ export default function DashboardCrudClient({
     setBusinessSelection(val);
     if (val === "new") {
       setFormBusinessName("");
-      setFormWebsite("");
-      setFormFacebook("");
-      setFormInstagram("");
-      setFormWhatsapp("");
-      setFormGoogleReviews("");
+      setCreateChannels([
+        {
+          id: "google",
+          type: "google",
+          title: "Google Reviews",
+          value: "",
+        },
+      ]);
+      setFormMode("DIRECT_REDIRECT");
     } else {
       const b = businesses.find((item) => item.id === val);
       if (b) {
         setFormBusinessName(b.name);
-        setFormWebsite(b.website || "");
-        setFormFacebook(b.facebook || "");
-        setFormInstagram(b.instagram || "");
-        setFormWhatsapp(b.whatsapp || "");
-        setFormGoogleReviews(b.googleReviewUrl || "");
+        const chs: PlateChannel[] = [];
+        if (b.googleReviewUrl) chs.push({ id: "google", type: "google", title: "Google Reviews", value: b.googleReviewUrl });
+        if (b.facebook) chs.push({ id: "facebook", type: "facebook", title: "Facebook", value: b.facebook });
+        if (b.instagram) chs.push({ id: "instagram", type: "instagram", title: "Instagram", value: b.instagram });
+        if (b.whatsapp) chs.push({ id: "whatsapp", type: "whatsapp", title: "WhatsApp", value: b.whatsapp });
+        if (b.website) chs.push({ id: "website", type: "website", title: "Página Web Oficial", value: b.website });
+
+        if (chs.length === 0) {
+          chs.push({ id: "google", type: "google", title: "Google Reviews", value: "" });
+        }
+        setCreateChannels(chs);
+        setFormMode(chs.length > 1 ? "SMART_PROFILE" : "DIRECT_REDIRECT");
       }
     }
   };
@@ -247,11 +441,7 @@ export default function DashboardCrudClient({
         mode: formMode,
         staticDestinationType: formStaticDestination,
         customDestinationUrl: formCustomUrl,
-        website: formWebsite,
-        facebook: formFacebook,
-        instagram: formInstagram,
-        whatsapp: formWhatsapp,
-        googleReviewUrl: formGoogleReviews,
+        channels: createChannels,
       };
 
       const res = await fetch("/api/devices", {
@@ -292,12 +482,18 @@ export default function DashboardCrudClient({
 
       // Reset form
       setFormBusinessName("");
-      setFormWebsite("");
-      setFormFacebook("");
-      setFormInstagram("");
-      setFormWhatsapp("");
-      setFormGoogleReviews("");
+      setCreateChannels([
+        {
+          id: "google",
+          type: "google",
+          title: "Google Reviews",
+          value: "",
+        },
+      ]);
+      setFormMode("DIRECT_REDIRECT");
       setFormCustomUrl("");
+      setShowPlaceIdHelper(false);
+      setInlinePlaceId("");
     } catch (err: any) {
       setCreateError(err.message);
     } finally {
@@ -310,13 +506,51 @@ export default function DashboardCrudClient({
     setEditingDevice(dev);
     setEditError(null);
     setEditBusinessName(dev.business?.name || "");
-    setEditWebsite(dev.smartProfile?.websiteUrl || dev.business?.website || "");
-    setEditFacebook(dev.smartProfile?.facebookUrl || dev.business?.facebook || "");
-    setEditInstagram(dev.smartProfile?.instagramHandle || dev.business?.instagram || "");
-    setEditWhatsapp(dev.smartProfile?.whatsappNumber || dev.business?.whatsapp || "");
-    setEditGoogleReviews(dev.smartProfile?.googleReviewUrl || dev.business?.googleReviewUrl || "");
     setEditMode(dev.mode);
     setEditCustomUrl(dev.customDestinationUrl || "");
+    setShowEditPlaceIdHelper(false);
+    setInlineEditPlaceId("");
+    setEditPlaceIdMessage(null);
+
+    // Armar canales desde los datos actuales del dispositivo
+    const chs: PlateChannel[] = [];
+    const gUrl = dev.smartProfile?.googleReviewUrl || dev.business?.googleReviewUrl;
+    if (gUrl) chs.push({ id: "google", type: "google", title: "Google Reviews", value: gUrl });
+
+    const fbUrl = dev.smartProfile?.facebookUrl || dev.business?.facebook;
+    if (fbUrl) chs.push({ id: "facebook", type: "facebook", title: "Facebook", value: fbUrl });
+
+    const igUrl = dev.smartProfile?.instagramHandle || dev.business?.instagram;
+    if (igUrl) chs.push({ id: "instagram", type: "instagram", title: "Instagram", value: igUrl });
+
+    const waNum = dev.smartProfile?.whatsappNumber || dev.business?.whatsapp;
+    if (waNum) chs.push({ id: "whatsapp", type: "whatsapp", title: "WhatsApp", value: waNum });
+
+    const webUrl = dev.smartProfile?.websiteUrl || dev.business?.website;
+    if (webUrl) chs.push({ id: "website", type: "website", title: "Página Web Oficial", value: webUrl });
+
+    const mUrl = dev.smartProfile?.menuUrl;
+    if (mUrl) chs.push({ id: "menu", type: "menu", title: "Menú / Carta Digital", value: mUrl });
+
+    const mapsUrl = dev.smartProfile?.googleMapsUrl;
+    if (mapsUrl) chs.push({ id: "maps", type: "maps", title: "Google Maps", value: mapsUrl });
+
+    if (dev.smartProfile?.customLinks && dev.smartProfile.customLinks.length > 0) {
+      dev.smartProfile.customLinks.forEach((cl, i) => {
+        chs.push({
+          id: `custom_${cl.id || i}`,
+          type: cl.icon === "music" ? "tiktok" : "custom",
+          title: cl.title,
+          value: cl.url,
+        });
+      });
+    }
+
+    if (chs.length === 0) {
+      chs.push({ id: "google", type: "google", title: "Google Reviews", value: "" });
+    }
+
+    setEditChannels(chs);
   };
 
   // Guardar Edición (Update)
@@ -332,11 +566,7 @@ export default function DashboardCrudClient({
         businessName: editBusinessName,
         mode: editMode,
         customDestinationUrl: editCustomUrl || null,
-        website: editWebsite,
-        facebook: editFacebook,
-        instagram: editInstagram,
-        whatsapp: editWhatsapp,
-        googleReviewUrl: editGoogleReviews,
+        channels: editChannels,
       };
 
       const res = await fetch(`/api/devices/${editingDevice.id}`, {
@@ -347,6 +577,23 @@ export default function DashboardCrudClient({
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al actualizar la placa.");
+
+      // Extraer campos clave
+      const gReview = editChannels.find((c) => c.type === "google")?.value || "";
+      const fb = editChannels.find((c) => c.type === "facebook")?.value || "";
+      const ig = editChannels.find((c) => c.type === "instagram")?.value || "";
+      const wa = editChannels.find((c) => c.type === "whatsapp")?.value || "";
+      const web = editChannels.find((c) => c.type === "website")?.value || "";
+      const menu = editChannels.find((c) => c.type === "menu")?.value || "";
+      const maps = editChannels.find((c) => c.type === "maps")?.value || "";
+      const customLinks = editChannels
+        .filter((c) => c.type === "custom" || c.type === "tiktok")
+        .map((cl, i) => ({
+          id: cl.id,
+          title: cl.title,
+          url: cl.value,
+          icon: cl.type === "tiktok" ? "music" : "globe",
+        }));
 
       // Actualizar estado local
       setDevices((prev) =>
@@ -360,22 +607,25 @@ export default function DashboardCrudClient({
                 ? {
                     ...d.business,
                     name: editBusinessName,
-                    website: editWebsite,
-                    facebook: editFacebook,
-                    instagram: editInstagram,
-                    whatsapp: editWhatsapp,
-                    googleReviewUrl: editGoogleReviews,
+                    website: web,
+                    facebook: fb,
+                    instagram: ig,
+                    whatsapp: wa,
+                    googleReviewUrl: gReview,
                   }
                 : null,
               smartProfile: d.smartProfile
                 ? {
                     ...d.smartProfile,
                     title: editBusinessName,
-                    websiteUrl: editWebsite,
-                    facebookUrl: editFacebook,
-                    instagramHandle: editInstagram,
-                    whatsappNumber: editWhatsapp,
-                    googleReviewUrl: editGoogleReviews,
+                    websiteUrl: web,
+                    facebookUrl: fb,
+                    instagramHandle: ig,
+                    whatsappNumber: wa,
+                    googleReviewUrl: gReview,
+                    menuUrl: menu,
+                    googleMapsUrl: maps,
+                    customLinks,
                   }
                 : null,
             };
@@ -740,15 +990,15 @@ export default function DashboardCrudClient({
 
                       {/* Enlaces configurados */}
                       <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap max-w-[220px]">
                           {dev.smartProfile?.googleReviewUrl || dev.business?.googleReviewUrl ? (
                             <span title="Google Reviews activo" className="w-6 h-6 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center">
                               <Star className="w-3.5 h-3.5" />
                             </span>
                           ) : null}
                           {dev.smartProfile?.facebookUrl || dev.business?.facebook ? (
-                            <span title="Facebook activo" className="w-6 h-6 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center">
-                              <span className="font-bold text-[10px]">fb</span>
+                            <span title="Facebook activo" className="w-6 h-6 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold text-[10px]">
+                              fb
                             </span>
                           ) : null}
                           {dev.smartProfile?.instagramHandle || dev.business?.instagram ? (
@@ -762,10 +1012,30 @@ export default function DashboardCrudClient({
                             </span>
                           ) : null}
                           {dev.smartProfile?.websiteUrl || dev.business?.website ? (
-                            <span title="Web activa" className="w-6 h-6 rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center justify-center">
+                            <span title="Página Web activa" className="w-6 h-6 rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center justify-center">
                               <Globe className="w-3.5 h-3.5" />
                             </span>
                           ) : null}
+                          {dev.smartProfile?.menuUrl ? (
+                            <span title="Menú / Carta Digital" className="w-6 h-6 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center">
+                              <Utensils className="w-3.5 h-3.5" />
+                            </span>
+                          ) : null}
+                          {dev.smartProfile?.googleMapsUrl ? (
+                            <span title="Google Maps (Ubicación)" className="w-6 h-6 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center">
+                              <MapPin className="w-3.5 h-3.5" />
+                            </span>
+                          ) : null}
+                          {dev.smartProfile?.customLinks?.map((cl) => (
+                            <span
+                              key={cl.id}
+                              title={`${cl.title}: ${cl.url}`}
+                              className="px-1.5 py-0.5 rounded-md bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px] font-medium flex items-center gap-1"
+                            >
+                              {cl.icon === "music" ? <Music className="w-3 h-3 text-rose-400" /> : <Sparkles className="w-3 h-3 text-indigo-400" />}
+                              <span className="truncate max-w-[65px]">{cl.title}</span>
+                            </span>
+                          ))}
                         </div>
                       </td>
 
@@ -848,7 +1118,7 @@ export default function DashboardCrudClient({
       </div>
 
       {/* ===================================================================== */}
-      {/* MODAL 1: GENERAR NUEVA PLACA (CREATE CON TODOS LOS PARÁMETROS) */}
+      {/* MODAL 1: GENERAR NUEVA PLACA (CON CANALES DINÁMICOS Y PLACE ID FINDER) */}
       {/* ===================================================================== */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
@@ -867,7 +1137,7 @@ export default function DashboardCrudClient({
               </div>
               <h2 className="text-xl font-black text-white">Generar Nueva Placa QR + NFC</h2>
               <p className="text-xs text-slate-400">
-                Ingresa el nombre del negocio y los enlaces adicionales (web, facebook, instagram, etc.).
+                Selecciona solo los enlaces que tu cliente necesita. Por defecto incluye Google Reviews con apertura directa de 5 estrellas.
               </p>
             </div>
 
@@ -879,10 +1149,10 @@ export default function DashboardCrudClient({
             )}
 
             <form onSubmit={handleCreateSubmit} className="space-y-4">
-              {/* Combobox Dinámico de Selección de Negocio */}
+              {/* 1. Selección de Negocio */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-                  1. Selección de Negocio (Combobox Dinámico)
+                  1. Selección de Negocio
                 </label>
                 <select
                   value={businessSelection}
@@ -916,196 +1186,324 @@ export default function DashboardCrudClient({
                 </span>
               </div>
 
-              {/* Enlaces Adicionales */}
-              <div className="space-y-2.5 pt-2 border-t border-slate-800">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
-                  2. Parámetros Adicionales (Página, Redes, Contacto)
-                </label>
-
-                {/* Google Reviews */}
-                <div>
-                  <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
-                    <div className="flex items-center gap-1.5">
-                      <Star className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Enlace Google Reviews</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowPlaceIdHelper(!showPlaceIdHelper)}
-                      className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 transition"
-                    >
-                      <MapPin className="w-3 h-3" />
-                      <span>{showPlaceIdHelper ? "Cerrar Place ID" : "⚡ Usar Place ID Finder"}</span>
-                    </button>
+              {/* 2. Canales y Enlaces a Generar */}
+              <div className="space-y-3 pt-3 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                      2. Canales y Enlaces a Generar
+                    </label>
+                    <p className="text-[11px] text-slate-400">
+                      Configura solo los canales que el cliente usará para no generar enlaces innecesarios.
+                    </p>
                   </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                    {createChannels.length} {createChannels.length === 1 ? "canal" : "canales"}
+                  </span>
+                </div>
 
-                  {showPlaceIdHelper && (
-                    <div className="mb-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 space-y-2">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-semibold text-amber-300">Convertir Google Place ID en enlace 5 estrellas:</span>
-                        <a
-                          href="/dashboard/google-reviews"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-amber-400 hover:underline flex items-center gap-0.5"
-                        >
-                          <span>Herramienta completa</span>
-                          <ExternalLink className="w-2.5 h-2.5" />
-                        </a>
-                      </div>
-                      <div className="flex gap-1.5">
+                {/* Lista de Canales Activos */}
+                <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
+                  {createChannels.map((ch) => {
+                    if (ch.type === "google") {
+                      return (
+                        <div key={ch.id} className="p-3 rounded-xl bg-slate-900/90 border border-amber-500/30 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-5 h-5 rounded bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                                <Star className="w-3 h-3" />
+                              </div>
+                              <span className="text-xs font-bold text-white">⭐ Enlace Google Reviews (5 Estrellas)</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setShowPlaceIdHelper(!showPlaceIdHelper)}
+                                className="text-[11px] font-semibold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30 flex items-center gap-1 transition"
+                              >
+                                <MapPin className="w-3 h-3" />
+                                <span>{showPlaceIdHelper ? "Cerrar Place ID" : "⚡ Usar Place ID Finder"}</span>
+                              </button>
+                              {createChannels.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveChannel("create", ch.id)}
+                                  title="Quitar canal"
+                                  className="text-slate-500 hover:text-rose-400 p-0.5 transition"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Herramienta Integrada Place ID */}
+                          {showPlaceIdHelper && (
+                            <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 space-y-2">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-amber-300 flex items-center gap-1">
+                                  <Zap className="w-3 h-3 text-amber-400" />
+                                  <span>Convertir Google Place ID en enlace 5 estrellas directo:</span>
+                                </span>
+                                <a
+                                  href="https://developers.google.com/maps/documentation/javascript/examples/places-placeid-finder"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-amber-400 hover:underline flex items-center gap-0.5 font-bold"
+                                >
+                                  <span>Buscador Oficial Google</span>
+                                  <ExternalLink className="w-2.5 h-2.5" />
+                                </a>
+                              </div>
+                              <div className="flex gap-1.5">
+                                <input
+                                  type="text"
+                                  value={inlinePlaceId}
+                                  onChange={(e) => setInlinePlaceId(e.target.value)}
+                                  placeholder="Pega Place ID (ej. ChIJ...) o link copiado de Maps"
+                                  className="flex-1 px-2.5 py-1.5 bg-slate-950 border border-amber-500/30 rounded text-white text-xs font-mono focus:outline-none focus:border-amber-400"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => applyInlinePlaceId("create")}
+                                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded transition"
+                                >
+                                  Convertir
+                                </button>
+                              </div>
+                              {placeIdMessage && (
+                                <div className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                                  <Check className="w-3 h-3" />
+                                  <span>{placeIdMessage}</span>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-slate-400">
+                                <span>Ejemplos rápidos:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => applyInlinePlaceId("create", "ChIJLU7jZClu5kcR4PcOOO6p3I0")}
+                                  className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 hover:bg-slate-700 transition"
+                                >
+                                  Torre Eiffel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => applyInlinePlaceId("create", "ChIJaXQRs6lZwokRY6EFpJnhNNE")}
+                                  className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 hover:bg-slate-700 transition"
+                                >
+                                  Empire State
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => applyInlinePlaceId("create", "ChIJ_yH37L7MBZERk686zPq_6YI")}
+                                  className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 hover:bg-slate-700 transition"
+                                >
+                                  Central Lima
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          <input
+                            type="url"
+                            value={ch.value}
+                            onChange={(e) => handleChannelValueChange("create", ch.id, e.target.value)}
+                            placeholder="https://search.google.com/local/writereview?placeid=..."
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                      );
+                    }
+
+                    if (ch.type === "custom") {
+                      return (
+                        <div key={ch.id} className="p-3 rounded-xl bg-slate-900 border border-indigo-500/30 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-1">
+                              <Sparkles className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                              <input
+                                type="text"
+                                value={ch.title}
+                                onChange={(e) => handleChannelTitleChange("create", ch.id, e.target.value)}
+                                placeholder="Nombre de la categoría (ej: TripAdvisor, Delivery, PedidosYa)"
+                                className="px-2 py-1 bg-slate-950 border border-indigo-500/30 rounded text-xs text-white font-semibold flex-1 focus:outline-none focus:border-indigo-400"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveChannel("create", ch.id)}
+                              title="Quitar canal"
+                              className="text-slate-500 hover:text-rose-400 p-0.5 transition"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <input
+                            type="url"
+                            value={ch.value}
+                            onChange={(e) => handleChannelValueChange("create", ch.id, e.target.value)}
+                            placeholder="https://..."
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      );
+                    }
+
+                    // Otros canales predeterminados (Facebook, Instagram, WhatsApp, Website, TikTok, Maps, Menu)
+                    return (
+                      <div key={ch.id} className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-1.5">
+                            {ch.type === "facebook" && <span className="font-bold text-xs text-blue-400">fb</span>}
+                            {ch.type === "instagram" && <Instagram className="w-3.5 h-3.5 text-pink-400" />}
+                            {ch.type === "whatsapp" && <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />}
+                            {ch.type === "website" && <Globe className="w-3.5 h-3.5 text-cyan-400" />}
+                            {ch.type === "tiktok" && <Music className="w-3.5 h-3.5 text-rose-400" />}
+                            {ch.type === "maps" && <MapPin className="w-3.5 h-3.5 text-red-400" />}
+                            {ch.type === "menu" && <Utensils className="w-3.5 h-3.5 text-amber-400" />}
+                            <span className="font-semibold text-white">{ch.title}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveChannel("create", ch.id)}
+                            title="Quitar canal"
+                            className="text-slate-500 hover:text-rose-400 p-0.5 transition"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
                         <input
                           type="text"
-                          value={inlinePlaceId}
-                          onChange={(e) => setInlinePlaceId(e.target.value)}
-                          placeholder="Pega Place ID (ej. ChIJ...) o link de Maps"
-                          className="flex-1 px-2.5 py-1.5 bg-slate-950 border border-amber-500/30 rounded text-white text-xs font-mono focus:outline-none"
+                          value={ch.value}
+                          onChange={(e) => handleChannelValueChange("create", ch.id, e.target.value)}
+                          placeholder={
+                            ch.type === "facebook"
+                              ? "https://facebook.com/tunegocio"
+                              : ch.type === "instagram"
+                              ? "@tunegocio o https://instagram.com/..."
+                              : ch.type === "whatsapp"
+                              ? "Ej: +51 987654321"
+                              : ch.type === "website"
+                              ? "https://tunegocio.com"
+                              : ch.type === "tiktok"
+                              ? "@tunegocio o https://tiktok.com/@..."
+                              : ch.type === "maps"
+                              ? "https://maps.google.com/?cid=..."
+                              : "https://menu.tunegocio.com"
+                          }
+                          className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-indigo-500"
                         />
-                        <button
-                          type="button"
-                          onClick={applyInlinePlaceId}
-                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded transition"
-                        >
-                          Aplicar
-                        </button>
                       </div>
-                    </div>
-                  )}
-
-                  <input
-                    type="url"
-                    value={formGoogleReviews}
-                    onChange={(e) => setFormGoogleReviews(e.target.value)}
-                    placeholder="https://search.google.com/local/writereview?placeid=..."
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-indigo-500"
-                  />
+                    );
+                  })}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {/* Facebook */}
-                  <div>
-                    <div className="flex items-center gap-1.5 text-xs text-slate-300 mb-1">
-                      <span className="text-blue-400 font-bold text-xs">fb</span>
-                      <span>Facebook</span>
-                    </div>
-                    <input
-                      type="text"
-                      value={formFacebook}
-                      onChange={(e) => setFormFacebook(e.target.value)}
-                      placeholder="https://facebook.com/tunegocio"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-
-                  {/* Instagram */}
-                  <div>
-                    <div className="flex items-center gap-1.5 text-xs text-slate-300 mb-1">
-                      <Instagram className="w-3.5 h-3.5 text-pink-400" />
-                      <span>Instagram</span>
-                    </div>
-                    <input
-                      type="text"
-                      value={formInstagram}
-                      onChange={(e) => setFormInstagram(e.target.value)}
-                      placeholder="@tunegocio o https://instagram.com/..."
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {/* Página Web */}
-                  <div>
-                    <div className="flex items-center gap-1.5 text-xs text-slate-300 mb-1">
-                      <Globe className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>Página Web Oficial</span>
-                    </div>
-                    <input
-                      type="url"
-                      value={formWebsite}
-                      onChange={(e) => setFormWebsite(e.target.value)}
-                      placeholder="https://tunegocio.com"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-
-                  {/* WhatsApp */}
-                  <div>
-                    <div className="flex items-center gap-1.5 text-xs text-slate-300 mb-1">
-                      <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>WhatsApp</span>
-                    </div>
-                    <input
-                      type="text"
-                      value={formWhatsapp}
-                      onChange={(e) => setFormWhatsapp(e.target.value)}
-                      placeholder="Ej: +51 987654321"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
+                {/* Combobox para agregar nuevos canales */}
+                <div className="pt-1">
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleAddChannel("create", e.target.value as PlateChannelType);
+                        e.target.value = "";
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-slate-900 border border-dashed border-slate-700 hover:border-indigo-500 rounded-xl text-indigo-300 text-xs font-semibold focus:outline-none cursor-pointer transition"
+                  >
+                    <option value="" disabled>➕ Agregar Canal / Enlace (Facebook, IG, WA, Web, TikTok, Menú, Categoría...)</option>
+                    {AVAILABLE_CHANNEL_TYPES.map((cat) => {
+                      const already = cat.type !== "custom" && createChannels.some((c) => c.type === cat.type);
+                      return (
+                        <option key={cat.type} value={cat.type} disabled={already}>
+                          {cat.label} {already ? "(Ya agregado)" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
                 </div>
               </div>
 
-              {/* Combobox de Modo (Estático vs Dinámico) */}
+              {/* 3. Tipo de Redirección (Inteligente) */}
               <div className="pt-2 border-t border-slate-800 space-y-2">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
-                  3. Tipo de Redirección (Combobox Estático / Dinámico)
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                    3. Tipo de Redirección
+                  </label>
+                  <span className="text-[10px] text-slate-400">
+                    {createChannels.length <= 1
+                      ? "⭐ Recomendado: Modo Estático (Abre directo el enlace)"
+                      : "✨ Recomendado: Modo Dinámico (Bio-Hub con menú)"}
+                  </span>
+                </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFormMode("SMART_PROFILE")}
-                    className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 ${
-                      formMode === "SMART_PROFILE"
-                        ? "bg-indigo-600/20 border-indigo-500 text-white"
-                        : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700"
-                    }`}
-                  >
-                    <Sparkles className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-bold text-xs text-indigo-300">Modo Dinámico</div>
-                      <div className="text-[10px] text-slate-400 leading-tight mt-0.5">
-                        Bio-Hub con todos tus enlaces activos (Google, FB, IG, WA, Web).
-                      </div>
-                    </div>
-                  </button>
-
                   <button
                     type="button"
                     onClick={() => setFormMode("DIRECT_REDIRECT")}
                     className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 ${
                       formMode === "DIRECT_REDIRECT"
-                        ? "bg-amber-500/20 border-amber-500 text-white"
+                        ? "bg-amber-500/20 border-amber-500 text-white shadow-lg shadow-amber-500/10"
                         : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700"
                     }`}
                   >
                     <Zap className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-bold text-xs text-amber-300">Modo Estático</div>
+                      <div className="font-bold text-xs text-amber-300 flex items-center gap-1.5">
+                        <span>Modo Estático (Directo)</span>
+                        {createChannels.length <= 1 && (
+                          <span className="text-[9px] bg-amber-500/30 text-amber-200 px-1 py-0.2 rounded font-mono">
+                            Auto
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[10px] text-slate-400 leading-tight mt-0.5">
-                        Redirección directa 1 a 1 sin pasar por menú intermedio.
+                        Abre directamente 1 a 1 sin pasar por menú intermedio.
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormMode("SMART_PROFILE")}
+                    className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 ${
+                      formMode === "SMART_PROFILE"
+                        ? "bg-indigo-600/20 border-indigo-500 text-white shadow-lg shadow-indigo-600/10"
+                        : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700"
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold text-xs text-indigo-300 flex items-center gap-1.5">
+                        <span>Modo Dinámico (Bio-Hub)</span>
+                        {createChannels.length > 1 && (
+                          <span className="text-[9px] bg-indigo-500/30 text-indigo-200 px-1 py-0.2 rounded font-mono">
+                            Auto
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                        Página interactiva con botones hacia todos tus enlaces activos.
                       </div>
                     </div>
                   </button>
                 </div>
 
-                {/* Sub-Combobox si es Modo Estático */}
-                {formMode === "DIRECT_REDIRECT" && (
-                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 space-y-2">
+                {/* Sub-selector si es Modo Estático y hay varios canales */}
+                {formMode === "DIRECT_REDIRECT" && createChannels.length > 1 && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 space-y-2 mt-2">
                     <label className="block text-[11px] font-bold uppercase tracking-wider text-amber-300">
-                      ¿A qué destino redirigirá directamente al escanear?
+                      ¿A cuál de los enlaces configurados redirigirá directamente?
                     </label>
                     <select
                       value={formStaticDestination}
                       onChange={(e) => setFormStaticDestination(e.target.value)}
                       className="w-full px-3 py-2 bg-slate-900 border border-amber-500/30 rounded-lg text-white text-xs focus:outline-none"
                     >
-                      <option value="google">⭐ Enlace de Google Reviews</option>
-                      <option value="facebook">📘 Enlace de Facebook</option>
-                      <option value="instagram">📸 Enlace de Instagram</option>
-                      <option value="website">🌐 Página Web Oficial</option>
-                      <option value="whatsapp">💬 Chat directo de WhatsApp</option>
+                      {createChannels.map((c) => (
+                        <option key={c.id} value={c.type}>
+                          {c.title} ({c.type})
+                        </option>
+                      ))}
                       <option value="custom">🔗 URL Personalizada...</option>
                     </select>
 
@@ -1265,7 +1663,7 @@ export default function DashboardCrudClient({
       )}
 
       {/* ===================================================================== */}
-      {/* MODAL 3: EDITAR PLACA (UPDATE) */}
+      {/* MODAL 3: EDITAR PLACA (CANALES DINÁMICOS Y PLACE ID FINDER) */}
       {/* ===================================================================== */}
       {editingDevice && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
@@ -1283,7 +1681,7 @@ export default function DashboardCrudClient({
               </span>
               <h2 className="text-xl font-black text-white mt-2">Editar Configuración de Placa</h2>
               <p className="text-xs text-slate-400">
-                Los cambios se aplican al instante sin necesidad de cambiar el QR impreso.
+                Agrega, edita o elimina canales. Los cambios se actualizan al instante en tiempo real.
               </p>
             </div>
 
@@ -1308,12 +1706,236 @@ export default function DashboardCrudClient({
                 />
               </div>
 
+              {/* Canales y Enlaces en Edición */}
+              <div className="space-y-3 pt-3 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                      Canales y Enlaces Activos
+                    </label>
+                    <p className="text-[11px] text-slate-400">
+                      Modifica las URLs o agrega nuevos canales según la necesidad del cliente.
+                    </p>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                    {editChannels.length} {editChannels.length === 1 ? "canal" : "canales"}
+                  </span>
+                </div>
+
+                {/* Lista de Canales */}
+                <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
+                  {editChannels.map((ch) => {
+                    if (ch.type === "google") {
+                      return (
+                        <div key={ch.id} className="p-3 rounded-xl bg-slate-900/90 border border-amber-500/30 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-5 h-5 rounded bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                                <Star className="w-3 h-3" />
+                              </div>
+                              <span className="text-xs font-bold text-white">⭐ Enlace Google Reviews (5 Estrellas)</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setShowEditPlaceIdHelper(!showEditPlaceIdHelper)}
+                                className="text-[11px] font-semibold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30 flex items-center gap-1 transition"
+                              >
+                                <MapPin className="w-3 h-3" />
+                                <span>{showEditPlaceIdHelper ? "Cerrar Place ID" : "⚡ Usar Place ID Finder"}</span>
+                              </button>
+                              {editChannels.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveChannel("edit", ch.id)}
+                                  title="Quitar canal"
+                                  className="text-slate-500 hover:text-rose-400 p-0.5 transition"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {showEditPlaceIdHelper && (
+                            <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 space-y-2">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-amber-300 flex items-center gap-1">
+                                  <Zap className="w-3 h-3 text-amber-400" />
+                                  <span>Convertir Google Place ID en enlace 5 estrellas directo:</span>
+                                </span>
+                                <a
+                                  href="https://developers.google.com/maps/documentation/javascript/examples/places-placeid-finder"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-amber-400 hover:underline flex items-center gap-0.5 font-bold"
+                                >
+                                  <span>Buscador Oficial Google</span>
+                                  <ExternalLink className="w-2.5 h-2.5" />
+                                </a>
+                              </div>
+                              <div className="flex gap-1.5">
+                                <input
+                                  type="text"
+                                  value={inlineEditPlaceId}
+                                  onChange={(e) => setInlineEditPlaceId(e.target.value)}
+                                  placeholder="Pega Place ID (ej. ChIJ...) o link copiado de Maps"
+                                  className="flex-1 px-2.5 py-1.5 bg-slate-950 border border-amber-500/30 rounded text-white text-xs font-mono focus:outline-none focus:border-amber-400"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => applyInlinePlaceId("edit")}
+                                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded transition"
+                                >
+                                  Convertir
+                                </button>
+                              </div>
+                              {editPlaceIdMessage && (
+                                <div className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                                  <Check className="w-3 h-3" />
+                                  <span>{editPlaceIdMessage}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <input
+                            type="url"
+                            value={ch.value}
+                            onChange={(e) => handleChannelValueChange("edit", ch.id, e.target.value)}
+                            placeholder="https://search.google.com/local/writereview?placeid=..."
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                      );
+                    }
+
+                    if (ch.type === "custom") {
+                      return (
+                        <div key={ch.id} className="p-3 rounded-xl bg-slate-900 border border-indigo-500/30 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-1">
+                              <Sparkles className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                              <input
+                                type="text"
+                                value={ch.title}
+                                onChange={(e) => handleChannelTitleChange("edit", ch.id, e.target.value)}
+                                placeholder="Nombre de categoría (ej: TripAdvisor, Delivery, Menú)"
+                                className="px-2 py-1 bg-slate-950 border border-indigo-500/30 rounded text-xs text-white font-semibold flex-1 focus:outline-none focus:border-indigo-400"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveChannel("edit", ch.id)}
+                              title="Quitar canal"
+                              className="text-slate-500 hover:text-rose-400 p-0.5 transition"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <input
+                            type="url"
+                            value={ch.value}
+                            onChange={(e) => handleChannelValueChange("edit", ch.id, e.target.value)}
+                            placeholder="https://..."
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={ch.id} className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-1.5">
+                            {ch.type === "facebook" && <span className="font-bold text-xs text-blue-400">fb</span>}
+                            {ch.type === "instagram" && <Instagram className="w-3.5 h-3.5 text-pink-400" />}
+                            {ch.type === "whatsapp" && <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />}
+                            {ch.type === "website" && <Globe className="w-3.5 h-3.5 text-cyan-400" />}
+                            {ch.type === "tiktok" && <Music className="w-3.5 h-3.5 text-rose-400" />}
+                            {ch.type === "maps" && <MapPin className="w-3.5 h-3.5 text-red-400" />}
+                            {ch.type === "menu" && <Utensils className="w-3.5 h-3.5 text-amber-400" />}
+                            <span className="font-semibold text-white">{ch.title}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveChannel("edit", ch.id)}
+                            title="Quitar canal"
+                            className="text-slate-500 hover:text-rose-400 p-0.5 transition"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={ch.value}
+                          onChange={(e) => handleChannelValueChange("edit", ch.id, e.target.value)}
+                          placeholder={
+                            ch.type === "facebook"
+                              ? "https://facebook.com/tunegocio"
+                              : ch.type === "instagram"
+                              ? "@tunegocio o https://instagram.com/..."
+                              : ch.type === "whatsapp"
+                              ? "Ej: +51 987654321"
+                              : ch.type === "website"
+                              ? "https://tunegocio.com"
+                              : ch.type === "tiktok"
+                              ? "@tunegocio o https://tiktok.com/@..."
+                              : ch.type === "maps"
+                              ? "https://maps.google.com/?cid=..."
+                              : "https://menu.tunegocio.com"
+                          }
+                          className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder:text-slate-600 text-xs focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Combobox agregar canales en edición */}
+                <div className="pt-1">
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleAddChannel("edit", e.target.value as PlateChannelType);
+                        e.target.value = "";
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-slate-900 border border-dashed border-slate-700 hover:border-indigo-500 rounded-xl text-indigo-300 text-xs font-semibold focus:outline-none cursor-pointer transition"
+                  >
+                    <option value="" disabled>➕ Agregar Canal / Enlace (Facebook, IG, WA, Web, TikTok, Menú, Categoría...)</option>
+                    {AVAILABLE_CHANNEL_TYPES.map((cat) => {
+                      const already = cat.type !== "custom" && editChannels.some((c) => c.type === cat.type);
+                      return (
+                        <option key={cat.type} value={cat.type} disabled={already}>
+                          {cat.label} {already ? "(Ya agregado)" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              </div>
+
               {/* Modo de Redirección */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-                  Modo de Redirección (Estático vs Dinámico)
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Modo de Redirección
                 </label>
                 <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditMode("DIRECT_REDIRECT")}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                      editMode === "DIRECT_REDIRECT"
+                        ? "bg-amber-500/20 border-amber-500 text-amber-300"
+                        : "bg-slate-900 border-slate-800 text-slate-400"
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Estático (Directo 1 a 1)</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setEditMode("SMART_PROFILE")}
@@ -1326,134 +1948,23 @@ export default function DashboardCrudClient({
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>Dinámico (Bio-Hub)</span>
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setEditMode("DIRECT_REDIRECT")}
-                    className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                      editMode === "DIRECT_REDIRECT"
-                        ? "bg-amber-500/20 border-amber-500 text-amber-300"
-                        : "bg-slate-900 border-slate-800 text-slate-400"
-                    }`}
-                  >
-                    <Zap className="w-3.5 h-3.5" />
-                    <span>Estático (Directo)</span>
-                  </button>
                 </div>
               </div>
 
               {editMode === "DIRECT_REDIRECT" && (
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-amber-400 mb-1">
-                    URL de Redirección Directa
+                    URL de Redirección Directa Personalizada (Opcional)
                   </label>
                   <input
                     type="url"
                     value={editCustomUrl}
                     onChange={(e) => setEditCustomUrl(e.target.value)}
-                    placeholder="https://search.google.com/local/writereview?..."
+                    placeholder="Si se deja vacío, redirigirá al primer enlace activo de arriba"
                     className="w-full px-3 py-2 bg-slate-900 border border-amber-500/40 rounded-lg text-white text-xs focus:outline-none"
                   />
                 </div>
               )}
-
-              {/* Redes y Destinos */}
-              <div className="space-y-2.5 pt-2 border-t border-slate-800">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
-                  Enlaces del Perfil
-                </label>
-
-                <div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                    <span>Google Reviews:</span>
-                    <button
-                      type="button"
-                      onClick={() => setShowEditPlaceIdHelper(!showEditPlaceIdHelper)}
-                      className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1"
-                    >
-                      <MapPin className="w-3 h-3" />
-                      <span>{showEditPlaceIdHelper ? "Cerrar" : "⚡ Place ID"}</span>
-                    </button>
-                  </div>
-
-                  {showEditPlaceIdHelper && (
-                    <div className="mb-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 space-y-1.5">
-                      <div className="flex gap-1.5">
-                        <input
-                          type="text"
-                          value={inlineEditPlaceId}
-                          onChange={(e) => setInlineEditPlaceId(e.target.value)}
-                          placeholder="Pega Place ID (ChIJ...)"
-                          className="flex-1 px-2.5 py-1.5 bg-slate-950 border border-amber-500/30 rounded text-white text-xs font-mono focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={applyInlineEditPlaceId}
-                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded transition"
-                        >
-                          Aplicar
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  <input
-                    type="url"
-                    value={editGoogleReviews}
-                    onChange={(e) => setEditGoogleReviews(e.target.value)}
-                    placeholder="https://search.google.com/local/writereview?..."
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <span className="text-[11px] text-slate-400 block mb-1">Facebook:</span>
-                    <input
-                      type="text"
-                      value={editFacebook}
-                      onChange={(e) => setEditFacebook(e.target.value)}
-                      placeholder="https://facebook.com/..."
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <span className="text-[11px] text-slate-400 block mb-1">Instagram:</span>
-                    <input
-                      type="text"
-                      value={editInstagram}
-                      onChange={(e) => setEditInstagram(e.target.value)}
-                      placeholder="@tunegocio"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <span className="text-[11px] text-slate-400 block mb-1">Página Web:</span>
-                    <input
-                      type="url"
-                      value={editWebsite}
-                      onChange={(e) => setEditWebsite(e.target.value)}
-                      placeholder="https://..."
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <span className="text-[11px] text-slate-400 block mb-1">WhatsApp:</span>
-                    <input
-                      type="text"
-                      value={editWhatsapp}
-                      onChange={(e) => setEditWhatsapp(e.target.value)}
-                      placeholder="+51 987654321"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
 
               <div className="pt-3 flex items-center justify-end gap-2">
                 <button

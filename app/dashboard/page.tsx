@@ -26,6 +26,8 @@ export default async function DashboardPage() {
       sp.instagramHandle AS sp_instagramHandle, sp.instagramEnabled AS sp_instagramEnabled,
       sp.websiteUrl AS sp_websiteUrl, sp.websiteEnabled AS sp_websiteEnabled,
       sp.whatsappNumber AS sp_whatsappNumber, sp.whatsappEnabled AS sp_whatsappEnabled,
+      sp.menuUrl AS sp_menuUrl, sp.menuEnabled AS sp_menuEnabled,
+      sp.googleMapsUrl AS sp_googleMapsUrl, sp.googleMapsEnabled AS sp_googleMapsEnabled,
       COUNT(se.id) AS totalScans,
       SUM(CASE WHEN se.source = 'QR' THEN 1 ELSE 0 END) AS qrScans,
       SUM(CASE WHEN se.source = 'NFC' THEN 1 ELSE 0 END) AS nfcScans
@@ -36,6 +38,11 @@ export default async function DashboardPage() {
     GROUP BY d.id, b.id, sp.id
     ORDER BY d.createdAt DESC
   `);
+
+  // Obtener enlaces personalizados de smart_links
+  const allCustomLinks = await query<any>(
+    "SELECT id, profileId, title, url, icon, `order`, isActive FROM smart_links WHERE isActive = 1 ORDER BY `order` ASC"
+  );
 
   const devices = devicesRows.map((row: any) => ({
     id: row.id,
@@ -72,6 +79,13 @@ export default async function DashboardPage() {
           websiteEnabled: Boolean(row.sp_websiteEnabled),
           whatsappNumber: row.sp_whatsappNumber,
           whatsappEnabled: Boolean(row.sp_whatsappEnabled),
+          menuUrl: row.sp_menuUrl,
+          menuEnabled: Boolean(row.sp_menuEnabled),
+          googleMapsUrl: row.sp_googleMapsUrl,
+          googleMapsEnabled: Boolean(row.sp_googleMapsEnabled),
+          customLinks: allCustomLinks
+            ? allCustomLinks.filter((l: any) => l.profileId === row.sp_id)
+            : [],
         }
       : null,
     totalScans: Number(row.totalScans || 0),

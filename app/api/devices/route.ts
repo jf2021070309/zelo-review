@@ -20,6 +20,8 @@ export async function GET() {
       sp.instagramHandle AS sp_instagramHandle, sp.instagramEnabled AS sp_instagramEnabled,
       sp.websiteUrl AS sp_websiteUrl, sp.websiteEnabled AS sp_websiteEnabled,
       sp.whatsappNumber AS sp_whatsappNumber, sp.whatsappEnabled AS sp_whatsappEnabled,
+      sp.menuUrl AS sp_menuUrl, sp.menuEnabled AS sp_menuEnabled,
+      sp.googleMapsUrl AS sp_googleMapsUrl, sp.googleMapsEnabled AS sp_googleMapsEnabled,
       COUNT(se.id) AS totalScans,
       SUM(CASE WHEN se.source = 'QR' THEN 1 ELSE 0 END) AS qrScans,
       SUM(CASE WHEN se.source = 'NFC' THEN 1 ELSE 0 END) AS nfcScans
@@ -30,6 +32,10 @@ export async function GET() {
     GROUP BY d.id, b.id, sp.id
     ORDER BY d.createdAt DESC
   `);
+
+  const allCustomLinks = await query<any>(
+    "SELECT id, profileId, title, url, icon, `order`, isActive FROM smart_links WHERE isActive = 1 ORDER BY `order` ASC"
+  );
 
   const devices = devicesRows.map((row: any) => ({
     id: row.id,
@@ -66,6 +72,13 @@ export async function GET() {
           websiteEnabled: Boolean(row.sp_websiteEnabled),
           whatsappNumber: row.sp_whatsappNumber,
           whatsappEnabled: Boolean(row.sp_whatsappEnabled),
+          menuUrl: row.sp_menuUrl,
+          menuEnabled: Boolean(row.sp_menuEnabled),
+          googleMapsUrl: row.sp_googleMapsUrl,
+          googleMapsEnabled: Boolean(row.sp_googleMapsEnabled),
+          customLinks: allCustomLinks
+            ? allCustomLinks.filter((l: any) => l.profileId === row.sp_id)
+            : [],
         }
       : null,
     totalScans: Number(row.totalScans || 0),
@@ -88,14 +101,15 @@ export async function POST(request: Request) {
     const {
       businessName,
       existingBusinessId,
-      mode = "SMART_PROFILE",
+      mode = "DIRECT_REDIRECT",
       staticDestinationType = "google",
       customDestinationUrl,
-      googleReviewUrl,
-      facebook,
-      instagram,
-      website,
-      whatsapp,
+      channels,
+      googleReviewUrl: rawGoogle,
+      facebook: rawFacebook,
+      instagram: rawInstagram,
+      website: rawWebsite,
+      whatsapp: rawWhatsapp,
     } = body;
 
     if (!businessName && !existingBusinessId) {
@@ -103,6 +117,38 @@ export async function POST(request: Request) {
         { error: "Debe ingresar el nombre del negocio o seleccionar uno existente." },
         { status: 400 }
       );
+    }
+
+    // Extraer canales
+    let googleReviewUrl = (rawGoogle || "").trim();
+    let facebook = (rawFacebook || "").trim();
+    let instagram = (rawInstagram || "").trim();
+    let website = (rawWebsite || "").trim();
+    let whatsapp = (rawWhatsapp || "").trim();
+    let menuUrl = "";
+    let googleMapsUrl = "";
+    const customLinks: Array<{ id: string; type: string; title: string; value: string }> = [];
+
+    if (Array.isArray(channels) && channels.length > 0) {
+      for (const ch of channels) {
+        const val = (ch.value || "").trim();
+        if (!val) continue;
+        if (ch.type === "google") googleReviewUrl = val;
+        else if (ch.type === "facebook") facebook = val;
+        else if (ch.type === "instagram") instagram = val;
+        else if (ch.type === "website") website = val;
+        else if (ch.type === "whatsapp") whatsapp = val;
+        else if (ch.type === "menu") menuUrl = val;
+        else if (ch.type === "maps") googleMapsUrl = val;
+        else {
+          customLinks.push({
+            id: ch.id,
+            type: ch.type,
+            title: ch.title || "Enlace",
+            value: val,
+          });
+        }
+      }
     }
 
     // 1. Obtener o crear el Negocio
@@ -182,7 +228,9 @@ export async function POST(request: Request) {
     // 3. Determinar URL de destino si es modo Estático
     let finalDestinationUrl: string | null = null;
     if (mode === "DIRECT_REDIRECT") {
-      if (staticDestinationType === "google") {
+      if (customDestinationUrl) {
+        finalDestinationUrl = customDestinationUrl;
+      } else if (staticDestinationType === "google") {
         finalDestinationUrl =
           googleReviewUrl || business.googleReviewUrl || "https://search.google.com/local/writereview";
       } else if (staticDestinationType === "facebook") {
@@ -195,9 +243,27 @@ export async function POST(request: Request) {
       } else if (staticDestinationType === "whatsapp") {
         const num = (whatsapp || business.whatsapp || "").replace(/[^0-9]/g, "");
         finalDestinationUrl = num ? `https://wa.me/${num}` : "https://whatsapp.com";
+      } else if (staticDestinationType === "menu") {
+        finalDestinationUrl = menuUrl || "https://google.com";
+      } else if (staticDestinationType === "maps") {
+        finalDestinationUrl = googleMapsUrl || "https://maps.google.com";
       } else {
-        finalDestinationUrl =
-          customDestinationUrl || business.googleReviewUrl || "https://search.google.com/local/writereview";
+        // Buscar en customLinks si coincide
+        const foundCl = customLinks.find((l) => l.id === staticDestinationType || l.title === staticDestinationType);
+        if (foundCl) {
+          finalDestinationUrl = foundCl.value;
+        } else {
+          // Destino por defecto: primer enlace disponible (Google Reviews preferente)
+          finalDestinationUrl =
+            googleReviewUrl ||
+            business.googleReviewUrl ||
+            facebook ||
+            instagram ||
+            website ||
+            (whatsapp ? `https://wa.me/${whatsapp.replace(/[^0-9]/g, "")}` : null) ||
+            (customLinks[0]?.value) ||
+            "https://search.google.com/local/writereview";
+        }
       }
     }
 
@@ -209,12 +275,15 @@ export async function POST(request: Request) {
       [deviceId, plateCode, activationPin, mode, finalDestinationUrl, business.id]
     );
 
-    // 5. Crear el SmartProfile con todos los datos y redes
+    // 5. Crear el SmartProfile con los enlaces configurados
     const smartProfileId = crypto.randomUUID();
+    const gReviewEnabled = Boolean(googleReviewUrl || business.googleReviewUrl) ? 1 : 0;
     const fbEnabled = Boolean(facebook || business.facebook) ? 1 : 0;
     const igEnabled = Boolean(instagram || business.instagram) ? 1 : 0;
     const webEnabled = Boolean(website || business.website) ? 1 : 0;
     const waEnabled = Boolean(whatsapp || business.whatsapp) ? 1 : 0;
+    const mEnabled = Boolean(menuUrl) ? 1 : 0;
+    const mapsEnabled = Boolean(googleMapsUrl) ? 1 : 0;
 
     await execute(
       `INSERT INTO smart_profiles (
@@ -224,25 +293,58 @@ export async function POST(request: Request) {
         instagramHandle, instagramEnabled,
         websiteUrl, websiteEnabled,
         whatsappNumber, whatsappEnabled,
+        menuUrl, menuEnabled,
+        googleMapsUrl, googleMapsEnabled,
         createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
       [
         smartProfileId,
         deviceId,
         business.name,
         "¡Gracias por visitarnos! Califica tu experiencia y conéctate con nuestras redes.",
         "dark_gold",
-        googleReviewUrl || business.googleReviewUrl,
-        facebook || business.facebook,
+        googleReviewUrl || business.googleReviewUrl || null,
+        gReviewEnabled,
+        facebook || business.facebook || null,
         fbEnabled,
-        instagram || business.instagram,
+        instagram || business.instagram || null,
         igEnabled,
-        website || business.website,
+        website || business.website || null,
         webEnabled,
-        whatsapp || business.whatsapp,
+        whatsapp || business.whatsapp || null,
         waEnabled,
+        menuUrl || null,
+        mEnabled,
+        googleMapsUrl || null,
+        mapsEnabled,
       ]
     );
+
+    // 6. Insertar customLinks en smart_links
+    const createdCustomLinks: any[] = [];
+    if (customLinks.length > 0) {
+      for (let i = 0; i < customLinks.length; i++) {
+        const cl = customLinks[i];
+        if (cl.value && cl.value.trim()) {
+          const linkId = crypto.randomUUID();
+          const icon = cl.type === "tiktok" ? "music" : "globe";
+          await execute(
+            `INSERT INTO smart_links (id, profileId, title, url, icon, \`order\`, isActive, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, 1, NOW(3), NOW(3))`,
+            [linkId, smartProfileId, cl.title || "Enlace", cl.value.trim(), icon, i]
+          );
+          createdCustomLinks.push({
+            id: linkId,
+            profileId: smartProfileId,
+            title: cl.title,
+            url: cl.value.trim(),
+            icon,
+            order: i,
+            isActive: 1,
+          });
+        }
+      }
+    }
 
     const fullDevice = {
       id: deviceId,
@@ -258,7 +360,7 @@ export async function POST(request: Request) {
         title: business.name,
         description: "¡Gracias por visitarnos! Califica tu experiencia y conéctate con nuestras redes.",
         googleReviewUrl: googleReviewUrl || business.googleReviewUrl,
-        googleReviewEnabled: true,
+        googleReviewEnabled: Boolean(gReviewEnabled),
         facebookUrl: facebook || business.facebook,
         facebookEnabled: Boolean(fbEnabled),
         instagramHandle: instagram || business.instagram,
@@ -267,6 +369,11 @@ export async function POST(request: Request) {
         websiteEnabled: Boolean(webEnabled),
         whatsappNumber: whatsapp || business.whatsapp,
         whatsappEnabled: Boolean(waEnabled),
+        menuUrl: menuUrl || null,
+        menuEnabled: Boolean(mEnabled),
+        googleMapsUrl: googleMapsUrl || null,
+        googleMapsEnabled: Boolean(mapsEnabled),
+        customLinks: createdCustomLinks,
       },
       totalScans: 0,
       qrScans: 0,
