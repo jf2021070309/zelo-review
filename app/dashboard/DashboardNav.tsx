@@ -8,6 +8,9 @@ import {
   Sparkles,
   ShieldCheck,
   MapPin,
+  QrCode,
+  Users,
+  Inbox,
 } from "lucide-react";
 
 interface Props {
@@ -44,6 +47,21 @@ export default function DashboardNav({ user }: Props) {
       label: "Gestor de Placas (CRUD)",
       href: "/dashboard",
       icon: LayoutDashboard,
+    },
+    {
+      label: "Generador QR",
+      href: "/dashboard/qr",
+      icon: QrCode,
+    },
+    {
+      label: "Filtro de reseñas",
+      href: "/dashboard/resenas",
+      icon: Inbox,
+    },
+    {
+      label: "Gerentes y sucursales",
+      href: "/dashboard/gerentes",
+      icon: Users,
     },
   ];
 
