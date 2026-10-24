@@ -7,14 +7,14 @@ export const dynamic = "force-dynamic";
 
 function getPublicDomain(request: NextRequest): string {
   const envUrl = process.env.NEXT_PUBLIC_APP_URL;
-  if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
+  if (envUrl) {
     return envUrl.replace(/\/+$/, "");
   }
 
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
-  const proto = request.headers.get("x-forwarded-proto") || "https";
+  const proto = request.headers.get("x-forwarded-proto") || (host?.includes("localhost") ? "http" : "https");
 
-  if (host && !host.includes("localhost") && !host.includes("127.0.0.1") && !host.includes("3000")) {
+  if (host) {
     return `${proto}://${host}`;
   }
 
@@ -73,14 +73,25 @@ export async function GET(
       return NextResponse.redirect(`${domain}/r/${device.code}/profile`, { status: 302 });
     }
 
-    // Case 3: Direct Redirect Mode (Google Reviews o URL personalizada)
+    // Case 3: Filtro Inteligente de Reseñas / Redirección
     const rawDestination =
       device.customDestinationUrl ||
       device.businessGoogleReviewUrl ||
       "https://search.google.com/local/writereview";
 
-    const destination = ensureHttpUrl(rawDestination);
+    const isGoogleReview =
+      !device.customDestinationUrl ||
+      rawDestination.includes("google.com") ||
+      rawDestination.includes("writereview");
 
+    // Si el destino es Google Reviews o la placa cuenta con correo de alertas:
+    // Redirigir al Filtro Inteligente (/q/[code]) para interceptar notas de 1 a 3 estrellas
+    // y solo enviar a Google público las calificaciones de 4 o 5 estrellas.
+    if (isGoogleReview || device.managerEmail) {
+      return NextResponse.redirect(`${domain}/q/${device.code}`, { status: 302 });
+    }
+
+    const destination = ensureHttpUrl(rawDestination);
     return NextResponse.redirect(destination, { status: 302 });
   } catch (error) {
     console.error("Error in redirection route:", error);

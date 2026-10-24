@@ -239,6 +239,27 @@ export async function PATCH(
       );
     }
 
+    // Sincronizar actualización con qr_codes
+    try {
+      const qrData = {
+        businessName: businessName || device.businessName,
+        googleReviewUrl: googleReviewUrl || customDestinationUrl || "https://search.google.com/local/writereview",
+        threshold: 3,
+        managerEmail: managerEmail !== undefined ? (managerEmail ? managerEmail.trim() : null) : device.managerEmail,
+        managerName: managerName !== undefined ? (managerName ? managerName.trim() : null) : device.managerName,
+      };
+      await execute(
+        `UPDATE qr_codes SET 
+           name = COALESCE(?, name),
+           data = ?,
+           updatedAt = NOW(3)
+         WHERE code = ? OR id = ?`,
+        [businessName || null, JSON.stringify(qrData), device.code, device.id]
+      );
+    } catch (qrErr) {
+      console.warn("No se pudo sincronizar qr_codes en PATCH:", qrErr);
+    }
+
     // 4. Upsert / Actualizar SmartProfile
     if (
       smartProfile ||

@@ -92,8 +92,12 @@ export default function SmartProfileClient({
     }
 
     setTimeout(() => {
-      window.open(ensureHttpUrl(profile.googleReviewUrl), "_blank");
-    }, 600);
+      if (deviceCode) {
+        window.location.href = `/q/${deviceCode}`;
+      } else if (profile.googleReviewUrl) {
+        window.open(ensureHttpUrl(profile.googleReviewUrl), "_blank");
+      }
+    }, 400);
   };
 
   const copyWifiPassword = () => {

@@ -13,8 +13,18 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: { code: string } }) {
   try {
     await ensureReviewSchema();
-    const qr = await queryOne<any>("SELECT name, type, data FROM qr_codes WHERE code = ?", [params.code.toUpperCase()]);
-    if (!qr) return { title: "ZELO" };
+    const code = params.code.toUpperCase();
+    let qr = await queryOne<any>("SELECT name, type, data FROM qr_codes WHERE code = ?", [code]);
+    if (!qr) {
+      const dev = await queryOne<any>(
+        "SELECT d.code, b.name FROM devices d LEFT JOIN businesses b ON d.businessId = b.id WHERE d.code = ?",
+        [code]
+      );
+      if (dev) {
+        return { title: `Califica tu visita · ${dev.name || "ZELO Review"}` };
+      }
+      return { title: "ZELO" };
+    }
     const d = JSON.parse(qr.data || "{}");
     return { title: qr.type === "REVIEW_FILTER" ? `Califica tu visita · ${d.businessName || qr.name}` : d.title || qr.name };
   } catch {
@@ -25,7 +35,34 @@ export async function generateMetadata({ params }: { params: { code: string } })
 export default async function QrResolverPage({ params }: { params: { code: string } }) {
   await ensureReviewSchema();
   const code = params.code.toUpperCase();
-  const qr = await queryOne<any>("SELECT * FROM qr_codes WHERE code = ? LIMIT 1", [code]);
+  let qr = await queryOne<any>("SELECT * FROM qr_codes WHERE code = ? LIMIT 1", [code]);
+
+  if (!qr) {
+    const device = await queryOne<any>(
+      `SELECT d.*, b.name AS businessName, b.googleReviewUrl AS businessGoogleReviewUrl
+       FROM devices d
+       LEFT JOIN businesses b ON d.businessId = b.id
+       WHERE d.code = ? LIMIT 1`,
+      [code]
+    );
+    if (device) {
+      qr = {
+        id: device.id,
+        code: device.code,
+        name: device.businessName || "Placa ZELO",
+        type: "REVIEW_FILTER",
+        status: device.status,
+        data: JSON.stringify({
+          businessName: device.businessName,
+          googleReviewUrl: device.customDestinationUrl || device.businessGoogleReviewUrl || "https://search.google.com/local/writereview",
+          threshold: 3,
+          managerEmail: device.managerEmail,
+          managerName: device.managerName,
+        }),
+      };
+    }
+  }
+
   if (!qr) notFound();
 
   if (qr.status !== "ACTIVE") {

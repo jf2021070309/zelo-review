@@ -342,6 +342,31 @@ export async function POST(request: Request) {
       }
     }
 
+    // Sincronizar en tabla qr_codes con tipo REVIEW_FILTER
+    try {
+      await execute(
+        `INSERT INTO qr_codes (id, code, name, type, isDynamic, data, design, businessId, status, createdBy, createdAt, updatedAt)
+         VALUES (?, ?, ?, 'REVIEW_FILTER', 1, ?, NULL, ?, 'ACTIVE', ?, NOW(3), NOW(3))
+         ON DUPLICATE KEY UPDATE name = VALUES(name), data = VALUES(data), status = VALUES(status), updatedAt = NOW(3)`,
+        [
+          deviceId,
+          plateCode,
+          business.name,
+          JSON.stringify({
+            businessName: business.name,
+            googleReviewUrl: finalDestinationUrl || googleReviewUrl || business.googleReviewUrl || "https://search.google.com/local/writereview",
+            threshold: 3,
+            managerEmail: cleanMgrEmail,
+            managerName: cleanMgrName,
+          }),
+          business.id,
+          user.id,
+        ]
+      );
+    } catch (qrErr) {
+      console.warn("No se pudo sincronizar qr_codes:", qrErr);
+    }
+
     // 5. Crear el SmartProfile con los enlaces configurados
     const smartProfileId = crypto.randomUUID();
     const gReviewEnabled = Boolean(googleReviewUrl || business.googleReviewUrl) ? 1 : 0;
