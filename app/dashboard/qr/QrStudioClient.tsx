@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Link as LinkIcon, AlignLeft, Mail, PhoneCall, MessageSquareText, Contact, MessageCircle, Wifi, FileText,
   Smartphone, Images, PlayCircle, Share2, CalendarDays, Barcode, Star, Download, Save, Trash2, Pencil,
-  Pause, Play, Copy, Check, Upload, Loader2, QrCode, ExternalLink, Plus, X,
+  Pause, Play, Copy, Check, Upload, Loader2, QrCode, ExternalLink, Plus, X, ZoomIn, Maximize2,
 } from "lucide-react";
 import { QR_TYPES, QrType, QrField, getQrTypeDef, buildStaticPayload, buildBarcodeSvg, validateQrData } from "@/lib/qr-types";
 import { buildQrSvg, svgToPngDataUrl, DEFAULT_DESIGN, FRAME_OPTIONS, QrDesign, DotStyle, EyeStyle } from "@/lib/qr-render";
@@ -85,6 +85,15 @@ export default function QrStudioClient() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [uploading, setUploading] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [viewingQr, setViewingQr] = useState<SavedQr | {
+    name: string;
+    type: QrType;
+    code: string;
+    isDynamic: boolean;
+    data: Record<string, any>;
+    design: QrDesign | null;
+    branchName?: string | null;
+  } | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
   const def = getQrTypeDef(type)!;
@@ -101,6 +110,39 @@ export default function QrStudioClient() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setViewingQr(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const viewingSvg = useMemo(() => {
+    if (!viewingQr) return "";
+    try {
+      return renderSvg(
+        viewingQr.type,
+        viewingQr.isDynamic,
+        viewingQr.data,
+        { ...DEFAULT_DESIGN, ...(viewingQr.design || {}) },
+        viewingQr.code
+      );
+    } catch {
+      return "";
+    }
+  }, [viewingQr]);
+
+  const downloadViewing = async (fmt: "png" | "svg") => {
+    if (!viewingQr || !viewingSvg) return;
+    const fname = (viewingQr.name || "qr").replace(/[^\w\-]+/g, "_");
+    if (fmt === "svg") {
+      download(URL.createObjectURL(new Blob([viewingSvg], { type: "image/svg+xml" })), `${fname}.svg`);
+    } else {
+      download(await svgToPngDataUrl(viewingSvg, 1400), `${fname}.png`);
+    }
+  };
 
   const svg = useMemo(() => {
     try {
@@ -513,8 +555,21 @@ export default function QrStudioClient() {
         {/* DERECHA: vista previa y descarga */}
         <div className="p-5 sm:p-6 bg-slate-950/40 flex flex-col items-center gap-4">
           <h2 className="flex items-center gap-2 text-white font-semibold self-start"><span className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-sm">3</span> Descargar código {type === "BARCODE" ? "" : "QR"}</h2>
-          <div className="w-full aspect-square max-w-[320px] rounded-2xl bg-white p-4 flex items-center justify-center shadow-inner">
-            {svg ? <div className="w-full h-full flex items-center justify-center [&>svg]:max-w-full [&>svg]:max-h-full [&>svg]:w-auto [&>svg]:h-auto" dangerouslySetInnerHTML={{ __html: fitSvg(svg) }} /> : <span className="text-slate-400 text-sm">Completa el contenido</span>}
+          <div
+            onClick={() => svg && setViewingQr({ name: name || "Vista previa de QR", type, code: savedCode || "DEMO", isDynamic: effectiveDynamic, data, design })}
+            className="w-full aspect-square max-w-[320px] rounded-2xl bg-white p-4 flex items-center justify-center shadow-inner cursor-pointer group relative hover:ring-2 hover:ring-indigo-500 transition-all"
+            title="Clic para ampliar código QR"
+          >
+            {svg ? (
+              <>
+                <div className="w-full h-full flex items-center justify-center [&>svg]:max-w-full [&>svg]:max-h-full [&>svg]:w-auto [&>svg]:h-auto" dangerouslySetInnerHTML={{ __html: fitSvg(svg) }} />
+                <div className="absolute inset-0 bg-slate-950/60 rounded-2xl opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-semibold gap-1.5 backdrop-blur-[2px]">
+                  <Maximize2 className="w-4 h-4" /> Clic para ampliar
+                </div>
+              </>
+            ) : (
+              <span className="text-slate-400 text-sm">Completa el contenido</span>
+            )}
           </div>
           <div className="w-full text-[11px] text-slate-400 text-center break-all min-h-[16px]">
             {type === "BARCODE" ? "Code-128" : effectiveDynamic ? (savedCode ? `${getOrigin()}/q/${savedCode}` : "Se generará un enlace corto al guardar") : "Contenido estático codificado en el QR"}
@@ -553,7 +608,36 @@ export default function QrStudioClient() {
               const url = `${getOrigin()}/q/${q.code}`;
               return (
                 <div key={q.id} className={`flex flex-wrap items-center gap-4 px-5 py-3.5 ${editing?.id === q.id ? "bg-indigo-500/5" : ""}`}>
-                  <div className="w-14 h-14 rounded-lg bg-white p-1 shrink-0 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: (() => { try { return fitSvg(renderSvg(q.type, q.isDynamic, q.data, { ...DEFAULT_DESIGN, ...(q.design || {}), frame: "none", logo: null }, q.code)); } catch { return ""; } })() }} />
+                  <button
+                    type="button"
+                    onClick={() => setViewingQr(q)}
+                    title="Clic para ver código QR en grande"
+                    className="w-14 h-14 rounded-lg bg-white p-1 shrink-0 relative group cursor-pointer hover:ring-2 hover:ring-indigo-500 hover:scale-105 transition-all text-left shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <div
+                      className="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
+                      dangerouslySetInnerHTML={{
+                        __html: (() => {
+                          try {
+                            return fitSvg(
+                              renderSvg(
+                                q.type,
+                                q.isDynamic,
+                                q.data,
+                                { ...DEFAULT_DESIGN, ...(q.design || {}), frame: "none", logo: null },
+                                q.code
+                              )
+                            );
+                          } catch {
+                            return "";
+                          }
+                        })(),
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-slate-900/60 rounded-lg opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
+                      <ZoomIn className="w-4 h-4" />
+                    </div>
+                  </button>
                   <div className="flex-1 min-w-[180px]">
                     <div className="font-semibold text-white flex items-center gap-2">
                       <Icon className={`w-4 h-4 ${q.type === "REVIEW_FILTER" ? "text-amber-400" : "text-indigo-400"}`} /> {q.name}
@@ -591,6 +675,123 @@ export default function QrStudioClient() {
           </div>
         )}
       </div>
+
+      {/* MODAL FLOTANTE GRANDE PARA VISUALIZACIÓN QR */}
+      {viewingQr && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-200"
+          onClick={() => setViewingQr(null)}
+        >
+          <div
+            className="relative w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl p-5 sm:p-7 shadow-2xl flex flex-col items-center gap-4 text-center my-auto animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Botón cerrar */}
+            <button
+              type="button"
+              onClick={() => setViewingQr(null)}
+              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              title="Cerrar (Esc)"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Cabecera del modal */}
+            <div className="w-full pr-8 text-left">
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const d = getQrTypeDef(viewingQr.type);
+                  const Icon = ICONS[d?.icon || "Link"] || LinkIcon;
+                  return <Icon className={`w-5 h-5 shrink-0 ${viewingQr.type === "REVIEW_FILTER" ? "text-amber-400" : "text-indigo-400"}`} />;
+                })()}
+                <h3 className="text-lg sm:text-xl font-bold text-white truncate">{viewingQr.name}</h3>
+              </div>
+              <div className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-medium">
+                  {getQrTypeDef(viewingQr.type)?.label}
+                </span>
+                <span className="font-mono text-indigo-300 font-semibold">{viewingQr.code}</span>
+                <span>•</span>
+                <span>{viewingQr.isDynamic ? "QR Dinámico" : "QR Estático"}</span>
+                {viewingQr.branchName && (
+                  <>
+                    <span>•</span>
+                    <span className="text-slate-300">{viewingQr.branchName}</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Imagen QR en alta resolución */}
+            <div className={`w-full ${viewingQr.type === "BARCODE" ? "max-w-[460px] p-4" : "aspect-square max-w-[340px] sm:max-w-[380px] p-4 sm:p-5"} rounded-2xl bg-white flex items-center justify-center shadow-2xl border border-slate-200/20`}>
+              {viewingSvg ? (
+                <div
+                  className="w-full h-full flex items-center justify-center [&>svg]:max-w-full [&>svg]:max-h-full [&>svg]:w-auto [&>svg]:h-auto"
+                  dangerouslySetInnerHTML={{ __html: fitSvg(viewingSvg) }}
+                />
+              ) : (
+                <div className="text-slate-400 text-sm">No se pudo renderizar</div>
+              )}
+            </div>
+
+            {/* Enlace corto si es dinámico */}
+            {viewingQr.isDynamic && (
+              <div className="w-full bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs">
+                <span className="text-slate-400 truncate font-mono text-[11px] sm:text-xs">
+                  {`${getOrigin()}/q/${viewingQr.code}`}
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => copy(`${getOrigin()}/q/${viewingQr.code}`)}
+                    className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-1"
+                    title="Copiar enlace"
+                  >
+                    {copied === `${getOrigin()}/q/${viewingQr.code}` ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400 font-medium">Copiado</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copiar</span>
+                      </>
+                    )}
+                  </button>
+                  <a
+                    href={`/q/${viewingQr.code}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+                    title="Abrir en nueva pestaña"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* Acciones de descarga */}
+            <div className="w-full grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => downloadViewing("png")}
+                className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Download className="w-4 h-4" /> Descargar PNG
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadViewing("svg")}
+                className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-semibold text-sm flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Download className="w-4 h-4" /> Descargar SVG
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
