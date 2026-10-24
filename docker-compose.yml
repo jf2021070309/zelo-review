@@ -41,11 +41,12 @@ services:
       JWT_SECRET: ${JWT_SECRET:-zelo_super_secret_jwt_key_928374829374829374928374982374}
       ADMIN_REGISTRATION_KEY: ${ADMIN_REGISTRATION_KEY:-zelo-admin-master-2026}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://2.25.102.198}
-      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-}
-      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
-      WHATSAPP_TEMPLATE_NAME: ${WHATSAPP_TEMPLATE_NAME:-}
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
-      EMAIL_FROM: ${EMAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-smtp.zoho.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:-jaime.flores01@zelo.com.mx}
+      SMTP_PASS: ${SMTP_PASS:-cwiE6uc&}
+      EMAIL_FROM: ${EMAIL_FROM:-"ZELO Review" <jaime.flores01@zelo.com.mx>}
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
       CRON_SECRET: ${CRON_SECRET:-}
     ports:

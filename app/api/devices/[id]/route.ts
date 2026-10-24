@@ -80,6 +80,9 @@ export async function PATCH(
       customDestinationUrl,
       status,
       businessName,
+      managerEmail,
+      managerName,
+      managerPhone,
       channels,
       googleReviewUrl: rawGoogle,
       facebook: rawFacebook,
@@ -213,6 +216,18 @@ export async function PATCH(
     if (status) {
       deviceUpdates.push("status = ?");
       deviceValues.push(status);
+    }
+    if (managerEmail !== undefined) {
+      deviceUpdates.push("managerEmail = ?");
+      deviceValues.push(managerEmail ? managerEmail.trim() : null);
+    }
+    if (managerName !== undefined) {
+      deviceUpdates.push("managerName = ?");
+      deviceValues.push(managerName ? managerName.trim() : null);
+    }
+    if (managerPhone !== undefined) {
+      deviceUpdates.push("managerPhone = ?");
+      deviceValues.push(managerPhone ? managerPhone.trim() : null);
     }
 
     if (deviceUpdates.length > 0) {

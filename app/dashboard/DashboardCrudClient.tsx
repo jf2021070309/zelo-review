@@ -30,6 +30,7 @@ import {
   MapPin,
   Utensils,
   Music,
+  Mail,
 } from "lucide-react";
 import {
   normalizeChannelValue,
@@ -175,6 +176,9 @@ interface Device {
   mode: "DIRECT_REDIRECT" | "SMART_PROFILE";
   customDestinationUrl?: string | null;
   businessId?: string | null;
+  managerEmail?: string | null;
+  managerName?: string | null;
+  managerPhone?: string | null;
   business?: Business | null;
   smartProfile?: SmartProfile | null;
   totalScans: number;
@@ -216,6 +220,9 @@ export default function DashboardCrudClient({
   // Campos Form Crear / Generar
   const [businessSelection, setBusinessSelection] = useState<string>("new"); // "new" o business.id
   const [formBusinessName, setFormBusinessName] = useState("");
+  const [formManagerEmail, setFormManagerEmail] = useState("");
+  const [formManagerName, setFormManagerName] = useState("");
+  const [formManagerPhone, setFormManagerPhone] = useState("");
   
   // Canales Dinámicos en Crear (Por defecto SOLO Google Reviews)
   const [createChannels, setCreateChannels] = useState<PlateChannel[]>([
@@ -250,12 +257,18 @@ export default function DashboardCrudClient({
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [editBusinessName, setEditBusinessName] = useState("");
+  const [editManagerEmail, setEditManagerEmail] = useState("");
+  const [editManagerName, setEditManagerName] = useState("");
+  const [editManagerPhone, setEditManagerPhone] = useState("");
   const [editChannels, setEditChannels] = useState<PlateChannel[]>([]);
   const [editMode, setEditMode] = useState<"DIRECT_REDIRECT" | "SMART_PROFILE">("DIRECT_REDIRECT");
   const [editCustomUrl, setEditCustomUrl] = useState("");
   const [showEditPlaceIdHelper, setShowEditPlaceIdHelper] = useState(false);
   const [inlineEditPlaceId, setInlineEditPlaceId] = useState("");
   const [editPlaceIdMessage, setEditPlaceIdMessage] = useState<string | null>(null);
+
+  // Estado Modal Ver Detalles Completos de Placa
+  const [detailsDevice, setDetailsDevice] = useState<Device | null>(null);
 
   // Estado Modal Ver / Descargar QR
   const [qrModalDevice, setQrModalDevice] = useState<Device | null>(null);
@@ -458,6 +471,9 @@ export default function DashboardCrudClient({
       const payload = {
         businessName: formBusinessName,
         existingBusinessId: businessSelection === "new" ? null : businessSelection,
+        managerEmail: formManagerEmail.trim() || null,
+        managerName: formManagerName.trim() || null,
+        managerPhone: formManagerPhone.trim() || null,
         mode: formMode,
         staticDestinationType: formStaticDestination,
         customDestinationUrl: formCustomUrl ? ensureHttpUrl(formCustomUrl) : null,
@@ -476,6 +492,9 @@ export default function DashboardCrudClient({
       // Actualizar lista de placas localmente
       const newDev: Device = {
         ...data.device,
+        managerEmail: data.device.managerEmail || formManagerEmail.trim() || null,
+        managerName: data.device.managerName || formManagerName.trim() || null,
+        managerPhone: data.device.managerPhone || formManagerPhone.trim() || null,
         totalScans: 0,
         qrScans: 0,
         nfcScans: 0,
@@ -502,6 +521,9 @@ export default function DashboardCrudClient({
 
       // Reset form
       setFormBusinessName("");
+      setFormManagerEmail("");
+      setFormManagerName("");
+      setFormManagerPhone("");
       setCreateChannels([
         {
           id: "google",
@@ -526,6 +548,9 @@ export default function DashboardCrudClient({
     setEditingDevice(dev);
     setEditError(null);
     setEditBusinessName(dev.business?.name || "");
+    setEditManagerEmail(dev.managerEmail || "");
+    setEditManagerName(dev.managerName || "");
+    setEditManagerPhone(dev.managerPhone || "");
     setEditMode(dev.mode);
     setEditCustomUrl(dev.customDestinationUrl || "");
     setShowEditPlaceIdHelper(false);
@@ -590,6 +615,9 @@ export default function DashboardCrudClient({
 
       const payload = {
         businessName: editBusinessName,
+        managerEmail: editManagerEmail.trim() || null,
+        managerName: editManagerName.trim() || null,
+        managerPhone: editManagerPhone.trim() || null,
         mode: editMode,
         customDestinationUrl: editCustomUrl ? ensureHttpUrl(editCustomUrl) : null,
         channels: normalizedChannels,
@@ -621,14 +649,21 @@ export default function DashboardCrudClient({
           icon: cl.type === "tiktok" ? "music" : "globe",
         }));
 
+      const cleanMgrEmail = editManagerEmail.trim() || null;
+      const cleanMgrName = editManagerName.trim() || null;
+      const cleanMgrPhone = editManagerPhone.trim() || null;
+
       // Actualizar estado local
       setDevices((prev) =>
         prev.map((d) => {
           if (d.id === editingDevice.id) {
-            return {
+            const updated = {
               ...d,
               mode: editMode,
               customDestinationUrl: editCustomUrl || null,
+              managerEmail: cleanMgrEmail,
+              managerName: cleanMgrName,
+              managerPhone: cleanMgrPhone,
               business: d.business
                 ? {
                     ...d.business,
@@ -655,10 +690,49 @@ export default function DashboardCrudClient({
                   }
                 : null,
             };
+            return updated;
           }
           return d;
         })
       );
+
+      // Sincronizar modal de detalles si está abierto
+      setDetailsDevice((prev) => {
+        if (!prev || prev.id !== editingDevice.id) return prev;
+        return {
+          ...prev,
+          mode: editMode,
+          customDestinationUrl: editCustomUrl || null,
+          managerEmail: cleanMgrEmail,
+          managerName: cleanMgrName,
+          managerPhone: cleanMgrPhone,
+          business: prev.business
+            ? {
+                ...prev.business,
+                name: editBusinessName,
+                website: web,
+                facebook: fb,
+                instagram: ig,
+                whatsapp: wa,
+                googleReviewUrl: gReview,
+              }
+            : null,
+          smartProfile: prev.smartProfile
+            ? {
+                ...prev.smartProfile,
+                title: editBusinessName,
+                websiteUrl: web,
+                facebookUrl: fb,
+                instagramHandle: ig,
+                whatsappNumber: wa,
+                googleReviewUrl: gReview,
+                menuUrl: menu,
+                googleMapsUrl: maps,
+                customLinks,
+              }
+            : null,
+        };
+      });
 
       setEditingDevice(null);
     } catch (err: any) {
@@ -680,6 +754,9 @@ export default function DashboardCrudClient({
       if (res.ok) {
         setDevices((prev) =>
           prev.map((d) => (d.id === dev.id ? { ...d, status: nextStatus } : d))
+        );
+        setDetailsDevice((prev) =>
+          prev && prev.id === dev.id ? { ...prev, status: nextStatus } : prev
         );
       }
     } catch (err) {
@@ -946,29 +1023,22 @@ export default function DashboardCrudClient({
             <table className="w-full text-left text-sm text-slate-300">
               <thead className="bg-slate-950/90 text-slate-400 text-[11px] uppercase tracking-wider font-semibold border-b border-slate-800">
                 <tr>
-                  <th className="py-3.5 px-4">Código / PIN</th>
-                  <th className="py-3.5 px-4">Negocio</th>
-                  <th className="py-3.5 px-4">Modo de Redirección</th>
-                  <th className="py-3.5 px-4">Enlaces Configurados</th>
-                  <th className="py-3.5 px-4">Métricas Reales</th>
-                  <th className="py-3.5 px-4">Estado</th>
-                  <th className="py-3.5 px-4 text-right">Acciones (CRUD)</th>
+                  <th className="py-4 px-6">Código / PIN</th>
+                  <th className="py-4 px-6">Negocio</th>
+                  <th className="py-4 px-6 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80">
                 {filteredDevices.map((dev) => {
-                  const isSmart = dev.mode === "SMART_PROFILE";
-                  const qrUrl = getFullUrl(dev.code, "qr");
-
                   return (
                     <tr
                       key={dev.id}
                       className="hover:bg-slate-800/30 transition-colors group"
                     >
                       {/* Código y PIN */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td className="py-4 px-6 whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-white bg-slate-950 px-2 py-0.5 rounded-md border border-slate-700 text-xs">
+                          <span className="font-mono font-bold text-white bg-slate-950 px-2.5 py-1 rounded-md border border-slate-700 text-xs shadow-sm">
                             {dev.code}
                           </span>
                           <button
@@ -983,134 +1053,71 @@ export default function DashboardCrudClient({
                             )}
                           </button>
                         </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1 font-mono">
-                          <Lock className="w-2.5 h-2.5" />
-                          <span>PIN: {dev.activationPin}</span>
+                        <div className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-2 font-mono">
+                          <span className="flex items-center gap-1 text-slate-400">
+                            <Lock className="w-3 h-3" />
+                            <span>PIN: {dev.activationPin}</span>
+                          </span>
+                          <span>•</span>
+                          <button
+                            onClick={() => handleToggleStatus(dev)}
+                            title="Clic para cambiar estado"
+                            className={`font-sans text-[10px] font-semibold px-2 py-0.5 rounded-full border transition ${
+                              dev.status === "ACTIVE"
+                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
+                                : "bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/20"
+                            }`}
+                          >
+                            {dev.status === "ACTIVE" ? "Activo" : "Suspendido"}
+                          </button>
                         </div>
                       </td>
 
                       {/* Negocio */}
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-white truncate max-w-[180px]">
+                      <td className="py-4 px-6">
+                        <div className="font-semibold text-white text-sm truncate max-w-sm">
                           {dev.business?.name || "Sin Negocio Asignado"}
                         </div>
-                        <div className="text-[11px] text-slate-500">
-                          {dev.business?.slug || "—"}
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-1 flex-wrap">
+                          <span className="font-mono text-slate-500">{dev.business?.slug || "—"}</span>
+                          {dev.managerEmail ? (
+                            <>
+                              <span className="text-slate-600">•</span>
+                              <span
+                                className="text-indigo-400 flex items-center gap-1 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20 text-[11px]"
+                                title={`Gerente: ${dev.managerEmail}`}
+                              >
+                                <Mail className="w-3 h-3 flex-shrink-0" />
+                                <span className="font-mono truncate max-w-[200px]">{dev.managerEmail}</span>
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-slate-600">•</span>
+                              <span className="text-slate-500 text-[10px] italic">Sin correo de gerente</span>
+                            </>
+                          )}
                         </div>
-                      </td>
-
-                      {/* Modo (Estático vs Dinámico) */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        {isSmart ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
-                            <Sparkles className="w-3 h-3 text-indigo-400" />
-                            <span>Dinámico (Bio-Hub)</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                            <Zap className="w-3 h-3 text-amber-400" />
-                            <span>Estático (Directo)</span>
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Enlaces configurados */}
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-1.5 flex-wrap max-w-[220px]">
-                          {dev.smartProfile?.googleReviewUrl || dev.business?.googleReviewUrl ? (
-                            <span title="Google Reviews activo" className="w-6 h-6 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center">
-                              <Star className="w-3.5 h-3.5" />
-                            </span>
-                          ) : null}
-                          {dev.smartProfile?.facebookUrl || dev.business?.facebook ? (
-                            <span title="Facebook activo" className="w-6 h-6 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold text-[10px]">
-                              fb
-                            </span>
-                          ) : null}
-                          {dev.smartProfile?.instagramHandle || dev.business?.instagram ? (
-                            <span title="Instagram activo" className="w-6 h-6 rounded-md bg-pink-500/10 text-pink-400 border border-pink-500/20 flex items-center justify-center">
-                              <Instagram className="w-3.5 h-3.5" />
-                            </span>
-                          ) : null}
-                          {dev.smartProfile?.whatsappNumber || dev.business?.whatsapp ? (
-                            <span title="WhatsApp activo" className="w-6 h-6 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
-                              <MessageCircle className="w-3.5 h-3.5" />
-                            </span>
-                          ) : null}
-                          {dev.smartProfile?.websiteUrl || dev.business?.website ? (
-                            <span title="Página Web activa" className="w-6 h-6 rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center justify-center">
-                              <Globe className="w-3.5 h-3.5" />
-                            </span>
-                          ) : null}
-                          {dev.smartProfile?.menuUrl ? (
-                            <span title="Menú / Carta Digital" className="w-6 h-6 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center">
-                              <Utensils className="w-3.5 h-3.5" />
-                            </span>
-                          ) : null}
-                          {dev.smartProfile?.googleMapsUrl ? (
-                            <span title="Google Maps (Ubicación)" className="w-6 h-6 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center">
-                              <MapPin className="w-3.5 h-3.5" />
-                            </span>
-                          ) : null}
-                          {dev.smartProfile?.customLinks?.map((cl) => (
-                            <span
-                              key={cl.id}
-                              title={`${cl.title}: ${cl.url}`}
-                              className="px-1.5 py-0.5 rounded-md bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px] font-medium flex items-center gap-1"
-                            >
-                              {cl.icon === "music" ? <Music className="w-3 h-3 text-rose-400" /> : <Sparkles className="w-3 h-3 text-indigo-400" />}
-                              <span className="truncate max-w-[65px]">{cl.title}</span>
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-
-                      {/* Métricas Reales */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="text-xs font-bold text-white">
-                          {dev.totalScans} visitas
-                        </div>
-                        <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
-                          <span className="text-emerald-400">📷 {dev.qrScans} QR</span>
-                          <span>•</span>
-                          <span className="text-cyan-400">📱 {dev.nfcScans} NFC</span>
-                        </div>
-                      </td>
-
-                      {/* Estado */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <button
-                          onClick={() => handleToggleStatus(dev)}
-                          title="Clic para cambiar estado"
-                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition ${
-                            dev.status === "ACTIVE"
-                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
-                              : "bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/20"
-                          }`}
-                        >
-                          {dev.status === "ACTIVE" ? "🟢 Activo" : "🔴 Suspendido"}
-                        </button>
                       </td>
 
                       {/* Acciones */}
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* Probar Redirección */}
-                          <a
-                            href={`/r/${dev.code}?src=qr`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Probar redirección real"
-                            className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition"
+                      <td className="py-4 px-6 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Ver Detalles (Modal con métricas, gerente y canales) */}
+                          <button
+                            onClick={() => setDetailsDevice(dev)}
+                            title="Ver detalles completos, métricas y gerente de la placa"
+                            className="px-3 py-1.5 rounded-xl bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600 hover:text-white border border-indigo-500/30 transition flex items-center gap-1.5 text-xs font-semibold shadow-sm"
                           >
                             <Eye className="w-3.5 h-3.5" />
-                          </a>
+                            <span>Detalles</span>
+                          </button>
 
                           {/* Ver Enlaces QR y NFC / Descargar QR */}
                           <button
                             onClick={() => setQrModalDevice(dev)}
                             title="Ver Enlaces (QR y NFC) / Descargar QR"
-                            className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 hover:text-white border border-emerald-500/30 transition flex items-center gap-1.5 text-xs font-semibold"
+                            className="px-2.5 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 hover:text-white border border-emerald-500/30 transition flex items-center gap-1 text-xs font-semibold"
                           >
                             <QrCode className="w-3.5 h-3.5 text-emerald-400" />
                             <span className="text-[11px] font-bold">QR / NFC</span>
@@ -1119,8 +1126,8 @@ export default function DashboardCrudClient({
                           {/* Editar (Update) */}
                           <button
                             onClick={() => openEditModal(dev)}
-                            title="Editar placa y enlaces"
-                            className="p-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40 hover:text-white transition"
+                            title="Editar placa, gerente y canales"
+                            className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
@@ -1129,7 +1136,7 @@ export default function DashboardCrudClient({
                           <button
                             onClick={() => setDeletingDeviceId(dev.id)}
                             title="Eliminar placa"
-                            className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/30 transition"
+                            className="p-2 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/30 transition"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -1211,6 +1218,35 @@ export default function DashboardCrudClient({
                 <span className="text-[11px] text-slate-500 mt-1 block">
                   El código de la placa se generará automáticamente a partir de este nombre (ej: <code>ZL-{formBusinessName.slice(0, 4).toUpperCase() || "NAME"}-XXXX</code>).
                 </span>
+              </div>
+
+              {/* Gerente Responsable y Alertas de Reseñas */}
+              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-indigo-500/30 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-indigo-300 text-xs font-bold uppercase tracking-wider">
+                    <Mail className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Correo del Negocio para Alertas (SMTP Zelo)</span>
+                  </div>
+                  <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    SMTP Oficial Conectado
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Las opiniones negativas de clientes (1 a 3 estrellas) serán interceptadas en privado y enviadas de inmediato y directamente a este correo desde el servidor SMTP de ZELO.
+                </p>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Correo del Negocio / Encargado <span className="text-amber-400">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={formManagerEmail}
+                    onChange={(e) => setFormManagerEmail(e.target.value)}
+                    placeholder="contacto@minegocio.com o gerente@minegocio.com"
+                    className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
+                  />
+                </div>
               </div>
 
               {/* 2. Canales y Enlaces a Generar */}
@@ -1751,6 +1787,35 @@ export default function DashboardCrudClient({
                 />
               </div>
 
+              {/* Gerente Responsable y Alertas de Reseñas */}
+              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-indigo-500/30 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-indigo-300 text-xs font-bold uppercase tracking-wider">
+                    <Mail className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Correo del Negocio para Alertas (SMTP Zelo)</span>
+                  </div>
+                  <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    SMTP Oficial Conectado
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Las opiniones negativas de clientes (1 a 3 estrellas) serán interceptadas en privado y enviadas de inmediato y directamente a este correo desde el servidor SMTP de ZELO.
+                </p>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Correo del Negocio / Encargado <span className="text-amber-400">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={editManagerEmail}
+                    onChange={(e) => setEditManagerEmail(e.target.value)}
+                    placeholder="contacto@minegocio.com o gerente@minegocio.com"
+                    className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
+                  />
+                </div>
+              </div>
+
               {/* Canales y Enlaces en Edición */}
               <div className="space-y-3 pt-3 border-t border-slate-800">
                 <div className="flex items-center justify-between">
@@ -2213,6 +2278,365 @@ export default function DashboardCrudClient({
                 >
                   Cerrar
                 </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ===================================================================== */}
+      {/* MODAL: DETALLES COMPLETOS DE PLACA (MÉTRICAS, GERENTE Y CANALES) */}
+      {/* ===================================================================== */}
+      {detailsDevice && (() => {
+        const qrUrl = getFullUrl(detailsDevice.code, "qr");
+        const nfcUrl = getFullUrl(detailsDevice.code, "nfc");
+        const total = detailsDevice.totalScans || 0;
+        const qrPct = total > 0 ? Math.round((detailsDevice.qrScans / total) * 100) : 0;
+        const nfcPct = total > 0 ? Math.round((detailsDevice.nfcScans / total) * 100) : 0;
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+            <div className="glass-card rounded-2xl border border-slate-800 bg-[#0A0E17] max-w-2xl w-full p-6 space-y-5 shadow-2xl relative my-8">
+              <button
+                onClick={() => setDetailsDevice(null)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* Header con Código, PIN y Estado */}
+              <div>
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="font-mono text-xs font-bold text-white bg-slate-900 px-2.5 py-1 rounded-md border border-slate-700 flex items-center gap-1.5">
+                    <span>{detailsDevice.code}</span>
+                    <button
+                      onClick={() => copyToClipboard(detailsDevice.code)}
+                      title="Copiar código"
+                      className="text-slate-500 hover:text-slate-300 transition"
+                    >
+                      {copiedText === detailsDevice.code ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </span>
+                  <span className="font-mono text-xs text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20 flex items-center gap-1.5">
+                    <Lock className="w-3 h-3" />
+                    <span>PIN: {detailsDevice.activationPin}</span>
+                    <button
+                      onClick={() => copyToClipboard(detailsDevice.activationPin)}
+                      title="Copiar PIN"
+                      className="text-amber-500 hover:text-amber-300 transition"
+                    >
+                      {copiedText === detailsDevice.activationPin ? (
+                        <Check className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                    </button>
+                  </span>
+                  <button
+                    onClick={() => handleToggleStatus(detailsDevice)}
+                    title="Alternar estado de la placa"
+                    className={`text-xs font-semibold px-2.5 py-1 rounded-md border transition ${
+                      detailsDevice.status === "ACTIVE"
+                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
+                        : "bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/20"
+                    }`}
+                  >
+                    {detailsDevice.status === "ACTIVE" ? "🟢 Placa Activa" : "🔴 Placa Suspendida"}
+                  </button>
+                </div>
+                <h2 className="text-xl font-black text-white">
+                  {detailsDevice.business?.name || "Sin Negocio Asignado"}
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Identificador slug: <code className="text-slate-300 font-mono">{detailsDevice.business?.slug || "—"}</code> • Registrada: {new Date(detailsDevice.createdAt).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })}
+                </p>
+              </div>
+
+              {/* Sección 1: Gerente Responsable & Alertas de Reseñas */}
+              <div className="p-4 rounded-xl bg-slate-900/80 border border-indigo-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-indigo-300 text-xs font-bold uppercase tracking-wider">
+                    <Mail className="w-4 h-4 text-indigo-400" />
+                    <span>Gerente Responsable & Filtro de Reseñas</span>
+                  </div>
+                  <span className="text-[10px] bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-semibold">
+                    Protección de Reputación
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-lg bg-black/40 border border-slate-800">
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold tracking-wider mb-1">
+                      Correo para Alertas
+                    </span>
+                    {detailsDevice.managerEmail ? (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-white text-xs truncate">
+                          {detailsDevice.managerEmail}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => copyToClipboard(detailsDevice.managerEmail || "")}
+                            title="Copiar correo"
+                            className="p-1 rounded bg-slate-800 text-slate-400 hover:text-white transition"
+                          >
+                            {copiedText === detailsDevice.managerEmail ? (
+                              <Check className="w-3 h-3 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
+                          </button>
+                          <a
+                            href={`mailto:${detailsDevice.managerEmail}`}
+                            title="Enviar correo"
+                            className="p-1 rounded bg-slate-800 text-slate-400 hover:text-white transition"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-slate-500 italic text-[11px]">
+                        No configurado aún. Haz clic en "Editar Placa" para asignarlo.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-black/40 border border-slate-800">
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold tracking-wider mb-1">
+                      Canal de Alertas de Reseña
+                    </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        <span className="text-xs font-semibold text-white">SMTP Oficial ZELO</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[10px] font-semibold font-mono">
+                        Zoho Mail
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Envío directo e inmediato al correo del negocio cuando una calificación sea ≤ 3 estrellas.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-indigo-950/20 border border-indigo-500/20 text-[11px] text-slate-300 flex items-start gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <span>
+                    <strong>¿Cómo funciona?</strong> Cuando un cliente califica con 1 a 3 estrellas, la reseña no llega a Google. Se intercepta inmediatamente y se envía una notificación al gerente asignado para resolver el reclamo en privado.
+                  </span>
+                </div>
+              </div>
+
+              {/* Sección 2: Métricas Reales (Total, QR, NFC) */}
+              <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-slate-300 text-xs font-bold uppercase tracking-wider">
+                    <BarChart3 className="w-4 h-4 text-emerald-400" />
+                    <span>Métricas de Visitas Físicas</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={qrUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Probar redirección de la placa"
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium flex items-center gap-1 transition"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>Probar Redirección</span>
+                    </a>
+                  </div>
+                </div>
+
+                {/* KPI Cards */}
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider block">
+                      Total Visitas
+                    </span>
+                    <span className="text-2xl font-black text-white mt-0.5 block">
+                      {total}
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
+                    <span className="text-[10px] text-emerald-400 uppercase font-bold tracking-wider block flex items-center justify-center gap-1">
+                      <QrCode className="w-3 h-3" /> QR ({qrPct}%)
+                    </span>
+                    <span className="text-2xl font-black text-emerald-300 mt-0.5 block">
+                      {detailsDevice.qrScans}
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20">
+                    <span className="text-[10px] text-cyan-400 uppercase font-bold tracking-wider block flex items-center justify-center gap-1">
+                      <Smartphone className="w-3 h-3" /> NFC ({nfcPct}%)
+                    </span>
+                    <span className="text-2xl font-black text-cyan-300 mt-0.5 block">
+                      {detailsDevice.nfcScans}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Proportion bar */}
+                {total > 0 && (
+                  <div className="space-y-1">
+                    <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden flex">
+                      <div
+                        style={{ width: `${qrPct}%` }}
+                        className="bg-emerald-500 h-full transition-all"
+                        title={`QR: ${qrPct}%`}
+                      />
+                      <div
+                        style={{ width: `${nfcPct}%` }}
+                        className="bg-cyan-500 h-full transition-all"
+                        title={`NFC: ${nfcPct}%`}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                      <span>📷 QR: {detailsDevice.qrScans} escaneos ({qrPct}%)</span>
+                      <span>📱 NFC: {detailsDevice.nfcScans} toques ({nfcPct}%)</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Sección 3: Modo de Redirección & Canales */}
+              <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-slate-300 text-xs font-bold uppercase tracking-wider">
+                    <Zap className="w-4 h-4 text-amber-400" />
+                    <span>Modo de Redirección & Canales</span>
+                  </div>
+                  {detailsDevice.mode === "SMART_PROFILE" ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                      <Sparkles className="w-3 h-3 text-indigo-400" />
+                      <span>Dinámico (Bio-Hub)</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      <Zap className="w-3 h-3 text-amber-400" />
+                      <span>Estático (Directo)</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Destino URL */}
+                <div className="p-2.5 rounded-lg bg-black/40 border border-slate-800 text-xs">
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block mb-1">
+                    Destino Principal al Escanear:
+                  </span>
+                  <a
+                    href={detailsDevice.customDestinationUrl || detailsDevice.business?.googleReviewUrl || "https://search.google.com/local/writereview"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-400 hover:underline font-mono text-[11px] break-all flex items-center gap-1"
+                  >
+                    <span>{detailsDevice.customDestinationUrl || detailsDevice.business?.googleReviewUrl || "https://search.google.com/local/writereview"}</span>
+                    <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                  </a>
+                </div>
+
+                {/* Canales Activos */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">
+                    Canales Configurados en esta Placa:
+                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {detailsDevice.smartProfile?.googleReviewUrl || detailsDevice.business?.googleReviewUrl ? (
+                      <span className="px-2 py-1 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20 text-xs font-medium flex items-center gap-1.5">
+                        <Star className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Google Reviews</span>
+                      </span>
+                    ) : null}
+                    {detailsDevice.smartProfile?.facebookUrl || detailsDevice.business?.facebook ? (
+                      <span className="px-2 py-1 rounded-md bg-blue-500/10 text-blue-300 border border-blue-500/20 text-xs font-medium flex items-center gap-1.5">
+                        <span className="font-bold text-[11px]">fb</span>
+                        <span>Facebook</span>
+                      </span>
+                    ) : null}
+                    {detailsDevice.smartProfile?.instagramHandle || detailsDevice.business?.instagram ? (
+                      <span className="px-2 py-1 rounded-md bg-pink-500/10 text-pink-300 border border-pink-500/20 text-xs font-medium flex items-center gap-1.5">
+                        <Instagram className="w-3.5 h-3.5 text-pink-400" />
+                        <span>Instagram</span>
+                      </span>
+                    ) : null}
+                    {detailsDevice.smartProfile?.whatsappNumber || detailsDevice.business?.whatsapp ? (
+                      <span className="px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-xs font-medium flex items-center gap-1.5">
+                        <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>WhatsApp</span>
+                      </span>
+                    ) : null}
+                    {detailsDevice.smartProfile?.websiteUrl || detailsDevice.business?.website ? (
+                      <span className="px-2 py-1 rounded-md bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-xs font-medium flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Sitio Web</span>
+                      </span>
+                    ) : null}
+                    {detailsDevice.smartProfile?.menuUrl ? (
+                      <span className="px-2 py-1 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20 text-xs font-medium flex items-center gap-1.5">
+                        <Utensils className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Menú Digital</span>
+                      </span>
+                    ) : null}
+                    {detailsDevice.smartProfile?.googleMapsUrl ? (
+                      <span className="px-2 py-1 rounded-md bg-rose-500/10 text-rose-300 border border-rose-500/20 text-xs font-medium flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Google Maps</span>
+                      </span>
+                    ) : null}
+                    {detailsDevice.smartProfile?.customLinks?.map((cl) => (
+                      <span
+                        key={cl.id}
+                        className="px-2 py-1 rounded-md bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-xs font-medium flex items-center gap-1.5"
+                      >
+                        {cl.icon === "music" ? <Music className="w-3.5 h-3.5 text-rose-400" /> : <Sparkles className="w-3.5 h-3.5 text-indigo-400" />}
+                        <span>{cl.title}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Botones de acción del Modal de Detalles */}
+              <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setDetailsDevice(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+                >
+                  Cerrar
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = detailsDevice;
+                      setDetailsDevice(null);
+                      setQrModalDevice(d);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Ver / Descargar QR y NFC</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = detailsDevice;
+                      setDetailsDevice(null);
+                      openEditModal(d);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 transition"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Editar Placa</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

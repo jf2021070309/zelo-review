@@ -18,6 +18,7 @@ export default async function DashboardPage() {
   const devicesRows = await query(`
     SELECT 
       d.id, d.code, d.activationPin, d.status, d.mode, d.customDestinationUrl, d.businessId, d.createdAt,
+      d.managerEmail, d.managerName, d.managerPhone,
       b.id AS b_id, b.name AS b_name, b.slug AS b_slug, b.googleReviewUrl AS b_googleReviewUrl,
       b.facebook AS b_facebook, b.instagram AS b_instagram, b.website AS b_website, b.whatsapp AS b_whatsapp,
       sp.id AS sp_id, sp.title AS sp_title, sp.description AS sp_description,
@@ -52,6 +53,9 @@ export default async function DashboardPage() {
     mode: row.mode,
     customDestinationUrl: row.customDestinationUrl,
     businessId: row.businessId,
+    managerEmail: row.managerEmail || null,
+    managerName: row.managerName || null,
+    managerPhone: row.managerPhone || null,
     business: row.b_id
       ? {
           id: row.b_id,

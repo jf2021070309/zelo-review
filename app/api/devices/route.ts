@@ -19,6 +19,7 @@ export async function GET() {
   const devicesRows = await query(`
     SELECT 
       d.id, d.code, d.activationPin, d.status, d.mode, d.customDestinationUrl, d.businessId, d.createdAt,
+      d.managerEmail, d.managerName, d.managerPhone,
       b.id AS b_id, b.name AS b_name, b.slug AS b_slug, b.googleReviewUrl AS b_googleReviewUrl,
       b.facebook AS b_facebook, b.instagram AS b_instagram, b.website AS b_website, b.whatsapp AS b_whatsapp,
       sp.id AS sp_id, sp.title AS sp_title, sp.description AS sp_description,
@@ -52,6 +53,9 @@ export async function GET() {
     mode: row.mode,
     customDestinationUrl: row.customDestinationUrl,
     businessId: row.businessId,
+    managerEmail: row.managerEmail || null,
+    managerName: row.managerName || null,
+    managerPhone: row.managerPhone || null,
     business: row.b_id
       ? {
           id: row.b_id,
@@ -112,6 +116,9 @@ export async function POST(request: Request) {
       staticDestinationType = "google",
       customDestinationUrl,
       channels,
+      managerEmail,
+      managerName,
+      managerPhone,
       googleReviewUrl: rawGoogle,
       facebook: rawFacebook,
       instagram: rawInstagram,
@@ -295,11 +302,45 @@ export async function POST(request: Request) {
 
     // 4. Crear la Placa (Device) en MySQL
     const deviceId = crypto.randomUUID();
+    const cleanMgrEmail = managerEmail ? managerEmail.trim() : null;
+    const cleanMgrName = managerName ? managerName.trim() : null;
+    const cleanMgrPhone = managerPhone ? managerPhone.trim() : null;
+
     await execute(
-      `INSERT INTO devices (id, code, activationPin, status, mode, customDestinationUrl, businessId, createdAt, updatedAt)
-       VALUES (?, ?, ?, 'ACTIVE', ?, ?, ?, NOW(3), NOW(3))`,
-      [deviceId, plateCode, activationPin, mode, finalDestinationUrl, business.id]
+      `INSERT INTO devices (id, code, activationPin, status, mode, customDestinationUrl, businessId, managerEmail, managerName, managerPhone, createdAt, updatedAt)
+       VALUES (?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
+      [deviceId, plateCode, activationPin, mode, finalDestinationUrl, business.id, cleanMgrEmail, cleanMgrName, cleanMgrPhone]
     );
+
+    // Si se especificó correo del gerente, vincular/crear gerente y sucursal para alertas de reseñas
+    if (cleanMgrEmail) {
+      try {
+        let mgr = await queryOne<any>("SELECT id FROM managers WHERE email = ? LIMIT 1", [cleanMgrEmail]);
+        if (!mgr) {
+          const mgrId = `mgr-${crypto.randomUUID()}`;
+          const token = `mgrtok-${crypto.randomBytes(8).toString("hex")}`;
+          await execute(
+            `INSERT INTO managers (id, businessId, name, role, channel, whatsapp, email, accessToken, isActive, createdAt, updatedAt)
+             VALUES (?, ?, ?, 'Gerente', 'BOTH', ?, ?, ?, 1, NOW(3), NOW(3))`,
+            [mgrId, business.id, cleanMgrName || business.name, cleanMgrPhone || null, cleanMgrEmail, token]
+          );
+          mgr = { id: mgrId };
+        }
+        let branch = await queryOne<any>("SELECT id, managerId FROM branches WHERE businessId = ? LIMIT 1", [business.id]);
+        if (!branch) {
+          const brcId = `brc-${crypto.randomUUID()}`;
+          await execute(
+            `INSERT INTO branches (id, businessId, managerId, name, address, googleReviewUrl, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
+            [brcId, business.id, mgr.id, `${business.name} - Principal`, business.address || null, googleReviewUrl || business.googleReviewUrl || null]
+          );
+        } else if (!branch.managerId) {
+          await execute("UPDATE branches SET managerId = ? WHERE id = ?", [mgr.id, branch.id]);
+        }
+      } catch (mgrErr) {
+        console.warn("No se pudo sincronizar entidad manager:", mgrErr);
+      }
+    }
 
     // 5. Crear el SmartProfile con los enlaces configurados
     const smartProfileId = crypto.randomUUID();

@@ -40,17 +40,63 @@ export interface ReviewQrContext {
 
 export async function loadReviewQr(code: string): Promise<ReviewQrContext | null> {
   await ensureReviewSchema();
-  const qr = await queryOne<any>("SELECT * FROM qr_codes WHERE code = ? AND type = 'REVIEW_FILTER' LIMIT 1", [code.toUpperCase()]);
+  const cleanCode = code.toUpperCase().trim();
+  let qr = await queryOne<any>("SELECT * FROM qr_codes WHERE code = ? AND type = 'REVIEW_FILTER' LIMIT 1", [cleanCode]);
+
+  // Si no está en qr_codes, verificar si es una placa inteligente en devices
+  let device = await queryOne<any>(
+    `SELECT d.*, b.name AS businessName, b.googleReviewUrl AS businessGoogleReviewUrl
+     FROM devices d
+     LEFT JOIN businesses b ON d.businessId = b.id
+     WHERE d.code = ? LIMIT 1`,
+    [cleanCode]
+  );
+
+  if (!qr && device) {
+    qr = {
+      id: device.id,
+      code: device.code,
+      name: device.businessName || "Placa ZELO",
+      type: "REVIEW_FILTER",
+      status: device.status,
+      data: JSON.stringify({
+        businessName: device.businessName,
+        googleReviewUrl: device.customDestinationUrl || device.businessGoogleReviewUrl || "https://search.google.com/local/writereview",
+        threshold: 3,
+        managerEmail: device.managerEmail,
+        managerName: device.managerName,
+      }),
+    };
+  }
+
   if (!qr) return null;
+
   let data: Record<string, any> = {};
   try {
     data = JSON.parse(qr.data || "{}");
   } catch {}
+
   const branchId = qr.branchId || data.branchId || null;
   const branch = branchId ? await queryOne<any>("SELECT * FROM branches WHERE id = ? LIMIT 1", [branchId]) : null;
-  const manager = branch?.managerId
+  let manager = branch?.managerId
     ? await queryOne<any>("SELECT * FROM managers WHERE id = ? AND isActive = 1 LIMIT 1", [branch.managerId])
     : null;
+
+  // Correo del negocio registrado en la placa o en los datos del código
+  const targetEmail = (device?.managerEmail || data.managerEmail || data.email || manager?.email || "").trim();
+  const targetName = device?.managerName || device?.businessName || data.businessName || manager?.name || qr.name;
+
+  if (!manager && targetEmail) {
+    manager = {
+      id: device?.id || qr.id,
+      name: targetName,
+      email: targetEmail,
+      channel: "EMAIL",
+    };
+  } else if (manager && targetEmail) {
+    manager.email = targetEmail;
+  }
+
   const threshold = Math.min(4, Math.max(1, parseInt(String(data.threshold || "3"), 10) || 3));
   return {
     qr,
@@ -58,8 +104,8 @@ export async function loadReviewQr(code: string): Promise<ReviewQrContext | null
     branch,
     manager,
     threshold,
-    googleReviewUrl: withHttp(data.googleReviewUrl || branch?.googleReviewUrl || "") || "https://search.google.com/local/writereview",
-    businessName: data.businessName || qr.name,
+    googleReviewUrl: withHttp(data.googleReviewUrl || branch?.googleReviewUrl || device?.customDestinationUrl || device?.businessGoogleReviewUrl || "") || "https://search.google.com/local/writereview",
+    businessName: data.businessName || device?.businessName || qr.name,
   };
 }
 
@@ -123,16 +169,16 @@ export async function submitReview(input: SubmitReviewInput): Promise<SubmitRevi
   const when = formatLimaDate();
   const managerLink = `${input.baseUrl}/atencion/${managerToken}`;
   const text =
-    `⚠️ *Alerta de reseña negativa* — ${ctx.businessName}\n` +
-    `Sucursal: ${ctx.branch?.name || "Sin sucursal"}\n` +
+    `⚠️ Alerta de reseña negativa — ${ctx.businessName}\n` +
+    `Sucursal / Placa: ${ctx.branch?.name || ctx.qr.code}\n` +
     `Hora: ${when}\n` +
     `Calificación: ${"★".repeat(rating)}${"☆".repeat(5 - rating)} (${rating}/5)\n` +
-    `Cliente: ${authorName}${phone ? ` · WhatsApp ${phone}` : ""}${email ? ` · ${email}` : ""}\n` +
+    `Cliente: ${authorName}${phone ? ` · Tel. ${phone}` : ""}${email ? ` · Correo: ${email}` : ""}\n` +
     `¿Qué podemos mejorar?: ${comment || "(sin comentario)"}\n\n` +
     `Responde al cliente aquí: ${managerLink}`;
 
   let notified: NotifyResult[] = [];
-  if (ctx.manager) {
+  if (ctx.manager?.email) {
     notified = await notify({
       caseId,
       managerId: ctx.manager.id,
@@ -147,7 +193,7 @@ export async function submitReview(input: SubmitReviewInput): Promise<SubmitRevi
         comment,
         branch: ctx.branch?.name || null,
         branchId,
-        manager: { id: ctx.manager.id, name: ctx.manager.name, whatsapp: ctx.manager.whatsapp, email: ctx.manager.email, channel: ctx.manager.channel },
+        manager: { id: ctx.manager.id, name: ctx.manager.name, email: ctx.manager.email, channel: "EMAIL" },
         customer: { name: authorName, phone, email },
         managerLink,
         customerLink: `${input.baseUrl}/c/${customerToken}`,
@@ -258,15 +304,15 @@ export async function postThreadMessage(tok: string, body: string, baseUrl: stri
       `UPDATE review_cases SET lastManagerMsgAt = NOW(3), status = IF(status = 'OPEN', 'IN_PROGRESS', status) WHERE id = ?`,
       [c.id]
     );
-    // Avisar al cliente si dejó contacto
-    if (c.customerPhone || c.customerEmail) {
+    // Avisar al cliente si dejó correo de contacto
+    if (c.customerEmail) {
       const mgr = c.managerId ? await queryOne<any>("SELECT name FROM managers WHERE id = ?", [c.managerId]) : null;
       await notify({
         caseId: c.id,
         audience: "CUSTOMER",
-        target: { channel: c.customerPhone && c.customerEmail ? "BOTH" : c.customerPhone ? "WHATSAPP" : "EMAIL", whatsapp: c.customerPhone, email: c.customerEmail },
+        target: { channel: "EMAIL", email: c.customerEmail },
         subject: "Respuesta sobre tu visita",
-        text: `Hola ${c.customerName || ""}, ${mgr?.name || "el gerente"} te respondió:\n\n"${text}"\n\nContinúa la conversación aquí: ${baseUrl}/c/${c.customerToken}`,
+        text: `Hola ${c.customerName || ""}, ${mgr?.name || "el negocio"} te respondió:\n\n"${text}"\n\nContinúa la conversación aquí: ${baseUrl}/c/${c.customerToken}`,
       });
     }
   } else {
@@ -299,11 +345,11 @@ export async function inviteRerate(tok: string, baseUrl: string) {
   const { c } = found;
   await addMessage(c.id, "MANAGER", "RERATE_INVITE", "Gracias por darnos la oportunidad de corregirlo. Si sientes que lo resolvimos, ¿te gustaría actualizar tu calificación?");
   await execute("UPDATE review_cases SET rerateInvitedAt = NOW(3), lastManagerMsgAt = NOW(3), status = IF(status = 'OPEN', 'IN_PROGRESS', status) WHERE id = ?", [c.id]);
-  if (c.customerPhone || c.customerEmail) {
+  if (c.customerEmail) {
     await notify({
       caseId: c.id,
       audience: "CUSTOMER",
-      target: { channel: c.customerPhone && c.customerEmail ? "BOTH" : c.customerPhone ? "WHATSAPP" : "EMAIL", whatsapp: c.customerPhone, email: c.customerEmail },
+      target: { channel: "EMAIL", email: c.customerEmail },
       subject: "¿Actualizarías tu calificación?",
       text: `Hola ${c.customerName || ""}, gracias por darnos la oportunidad de mejorar. Si quedaste conforme puedes actualizar tu calificación aquí: ${baseUrl}/c/${c.customerToken}`,
     });
@@ -386,11 +432,11 @@ export async function runFollowUps(baseUrl: string) {
   for (const c of pending) {
     await addMessage(c.id, "SYSTEM", "REMINDER", "Recordatorio: el gerente te escribió y espera tu respuesta. Sin presión 🙂");
     await execute("UPDATE review_cases SET reminderSentAt = NOW(3) WHERE id = ?", [c.id]);
-    if (c.customerPhone || c.customerEmail) {
+    if (c.customerEmail) {
       await notify({
         caseId: c.id,
         audience: "CUSTOMER",
-        target: { channel: c.customerPhone && c.customerEmail ? "BOTH" : c.customerPhone ? "WHATSAPP" : "EMAIL", whatsapp: c.customerPhone, email: c.customerEmail },
+        target: { channel: "EMAIL", email: c.customerEmail },
         subject: "Tienes una respuesta pendiente",
         text: `Hola ${c.customerName || ""}, solo un recordatorio amable: te respondimos sobre tu visita. Puedes verlo aquí: ${baseUrl}/c/${c.customerToken}`,
       });
@@ -408,11 +454,11 @@ export async function runFollowUps(baseUrl: string) {
   for (const c of due) {
     await addMessage(c.id, "SYSTEM", "FOLLOW_UP", "Seguimiento: ¿tu queja quedó resuelta? Puedes responder aquí o actualizar tu calificación.");
     await execute("UPDATE review_cases SET followUpSentAt = NOW(3) WHERE id = ?", [c.id]);
-    if (c.customerPhone || c.customerEmail) {
+    if (c.customerEmail) {
       await notify({
         caseId: c.id,
         audience: "CUSTOMER",
-        target: { channel: c.customerPhone && c.customerEmail ? "BOTH" : c.customerPhone ? "WHATSAPP" : "EMAIL", whatsapp: c.customerPhone, email: c.customerEmail },
+        target: { channel: "EMAIL", email: c.customerEmail },
         subject: "¿Quedó resuelta tu queja?",
         text: `Hola ${c.customerName || ""}, hace unos días nos contaste que algo no salió bien. ¿Quedó resuelto? Cuéntanos aquí: ${baseUrl}/c/${c.customerToken}`,
       });
