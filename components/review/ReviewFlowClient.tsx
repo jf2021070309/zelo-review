@@ -57,17 +57,47 @@ export default function ReviewFlowClient(props: Props) {
     return () => clearTimeout(t);
   }, [step]);
 
-  const pickRating = (v: number) => {
+  const pickRating = async (v: number) => {
     interacted.current = true;
     setNudge(false);
     setRating(v);
     setError(null);
-    setStep(v > threshold ? "public" : "private");
+
+    if (v > threshold) {
+      // 4 o 5 estrellas: Celebración y redirección directa e inmediata a Google Reviews
+      setStep("public-done");
+      confetti({ particleCount: 140, spread: 75, origin: { y: 0.6 }, colors: ["#FBBC04", "#4285F4", "#34A853", "#EA4335"] });
+
+      try {
+        const res = await fetch("/api/public/reviews", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code, rating: v }),
+        });
+        const json = await res.json();
+        const targetUrl = json.googleReviewUrl || "https://search.google.com/local/writereview";
+        setGoogleUrl(targetUrl);
+        setTimeout(() => {
+          window.location.href = targetUrl;
+        }, 900);
+      } catch {
+        setTimeout(() => {
+          window.location.href = googleUrl || "https://search.google.com/local/writereview";
+        }, 900);
+      }
+    } else {
+      // 1, 2 o 3 estrellas: Intercepción privada (nunca llega a Google)
+      setStep("private");
+    }
   };
 
   const changeRatingInComposer = (v: number) => {
     setRating(v);
-    setStep(v > threshold ? "public" : "private");
+    if (v > threshold) {
+      pickRating(v);
+    } else {
+      setStep("private");
+    }
   };
 
   const submit = async () => {
@@ -88,6 +118,9 @@ export default function ReviewFlowClient(props: Props) {
       if (json.outcome === "PUBLIC") {
         setStep("public-done");
         confetti({ particleCount: 140, spread: 75, origin: { y: 0.6 }, colors: ["#FBBC04", "#4285F4", "#34A853", "#EA4335"] });
+        setTimeout(() => {
+          window.location.href = json.googleReviewUrl;
+        }, 900);
       } else {
         setCustomerToken(json.customerToken);
         setAlwaysOfferGoogle(Boolean(json.alwaysOfferGoogle));
@@ -103,14 +136,8 @@ export default function ReviewFlowClient(props: Props) {
     }
   };
 
-  const goToGoogle = async () => {
-    if (comment.trim()) {
-      try {
-        await navigator.clipboard.writeText(comment.trim());
-        setCopied(true);
-      } catch {}
-    }
-    window.location.href = googleUrl;
+  const goToGoogle = () => {
+    window.location.href = googleUrl || "https://search.google.com/local/writereview";
   };
 
   const initial = (name.trim() || "T").slice(0, 1).toUpperCase();
@@ -204,16 +231,18 @@ export default function ReviewFlowClient(props: Props) {
             <div className="w-16 h-16 rounded-full bg-[#e6f4ea] mx-auto flex items-center justify-center">
               <svg width="34" height="34" viewBox="0 0 24 24" fill="#188038"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.4-1.4z" /></svg>
             </div>
-            <div className="text-[22px]">¡Gracias por tu reseña!</div>
+            <div className="text-[22px] font-semibold text-slate-800">¡Muchas gracias! ⭐</div>
             <p className="text-[15px] text-[#5f6368]">
-              Registramos tu calificación de {rating} estrellas. Último paso: compártela en Google para que más personas nos conozcan.
+              Nos alegra que hayas tenido una gran experiencia ({rating} estrellas).<br />
+              Abriendo Google Reviews para publicar tu reseña...
             </p>
+            <div className="flex items-center justify-center gap-2 text-sm text-[#1a73e8] font-medium py-2">
+              <div className="w-4 h-4 border-2 border-[#1a73e8] border-t-transparent rounded-full animate-spin"></div>
+              <span>Redirigiendo a Google...</span>
+            </div>
             <button onClick={goToGoogle} className="w-full py-3 rounded-full bg-[#1a73e8] text-white font-medium text-[15px] hover:bg-[#1765cc]">
-              Publicar en Google
+              Abrir Google Reviews ahora
             </button>
-            {comment.trim() && (
-              <p className="text-xs text-[#5f6368]">{copied ? "✓ Copiamos tu comentario, solo pégalo." : "Al tocar el botón copiaremos tu comentario para que solo lo pegues."}</p>
-            )}
           </div>
         )}
 
